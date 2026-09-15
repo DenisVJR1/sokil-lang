@@ -79,7 +79,7 @@ print('тест ' + 42)       // рядок + число = конкатенац�
 - Цикли: `while умова { }`, `for i = 0; i < n; i = i + 1 { }`, `break`, `continue`
 - Функції: `fn name(арг) { return ... }` + замикання
 - Масиви: `[1,2,3]`, `push`, `pop`, `join`, `split`, індекси
-- Вбудовані: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random`
+- Вбудовані: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid`
 - Оператори: `+ - * / % == != < > <= >= and or not`
 - Коментарі: `// рядок` та `/* блок */`
 - Скорочення: `i++`, `i--`; опційний розділювач `;`
@@ -165,7 +165,7 @@ print('test ' + 42)       // string + number = concatenation
 - Loops: `while cond { }`, `for i = 0; i < n; i = i + 1 { }`, `break`, `continue`
 - Functions: `fn name(args) { return ... }` + closures
 - Arrays: `[1,2,3]`, `push`, `pop`, `join`, `split`, indexing
-- Built-ins: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random`
+- Built-ins: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid`
 - Operators: `+ - * / % == != < > <= >= and or not`
 - Comments: `// line` and `/* block */`
 - Shorthand: `i++`, `i--`; optional `;` separator

@@ -177,7 +177,8 @@ static void run_program(HWND hw) {
     wchar_t desk[2048], comspec[MAX_PATH];
     DWORD cs = GetEnvironmentVariableW(L"COMSPEC", comspec, MAX_PATH);
     if (cs == 0 || cs >= MAX_PATH) wcscpy(comspec, L"C:\\Windows\\System32\\cmd.exe");
-    wsprintfW(desk, L"\"%s\" /c \"\"%s\" \"%s\" > \"%s\" 2>&1\"", comspec, sokil, tmp, outfile);
+    /* простіший формат без зайвих лапок */
+    wsprintfW(desk, L"\"%s\" /c \"%s\" \"%s\" > \"%s\" 2>&1", comspec, sokil, tmp, outfile);
     STARTUPINFOW si = { sizeof si };
     PROCESS_INFORMATION pi = {0};
     si.dwFlags = STARTF_USESHOWWINDOW;
@@ -200,7 +201,13 @@ static void run_program(HWND hw) {
         buf[got] = 0;
         fclose(fo);
         SetWindowTextW(hOut, L"");
-        SetWindowTextA(hOut, buf);
+        /* UTF-8 → UTF-16 для RichEdit */
+        int u16len = MultiByteToWideChar(CP_UTF8, 0, buf, (int)got, NULL, 0);
+        wchar_t *w = (wchar_t *)malloc((size_t)(u16len + 1) * 2);
+        MultiByteToWideChar(CP_UTF8, 0, buf, (int)got, w, u16len);
+        w[u16len] = 0;
+        SetWindowTextW(hOut, w);
+        free(w);
         free(buf);
         DeleteFileW(outfile);
     }
@@ -289,7 +296,7 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
             L"fn add(a, b) { return a + b }\n"
             L"print(add(2, 3))\n"
             L"print('hi' * 3)   // повтор рядка\n"
-            L"sokil = input('як тебе звати? ')\n"
+            L"let sokil = input('як тебе звати? ')\n"
             L"print('привіт, ' + sokil)\n");
         hOut = CreateWindowExW(WS_EX_CLIENTEDGE, L"RichEdit50W", L"",
             WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_MULTILINE|ES_AUTOVSCROLL|ES_READONLY, 8, 472, 784, 130, hw, (HMENU)ID_OUTPUT, NULL, NULL);

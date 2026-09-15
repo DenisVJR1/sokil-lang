@@ -74,6 +74,9 @@ static const wchar_t *BG_CODE[] = {
 };
 #define BG_N (int)(sizeof BG_CODE / sizeof BG_CODE[0])
 
+/* forward */
+static void notify_env(void);
+
 /* ── PATH ── */
 static void path_add(void) {
     DWORD sz = 32767;
@@ -83,12 +86,19 @@ static void path_add(void) {
                           RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, NULL, old, &sz);
     if (r != ERROR_SUCCESS) { wcscpy(old, L"%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps"); }
     if (wcsstr(old, APP_DIR) != NULL) { free(old); return; }
-    size_t n = wcslen(old) + wcslen(APP_DIR) + 2;
+    /* normalize: strip leading/trailing ';' */
+    wchar_t *p = old;
+    while (*p == L';') p++;
+    size_t len = wcslen(p);
+    while (len && p[len - 1] == L';') p[--len] = 0;
+    if (len == 0) wcscpy(p, L"%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps");
+    size_t n = wcslen(p) + wcslen(APP_DIR) + 2;
     wchar_t *nw = (wchar_t *)malloc(n * sizeof(wchar_t));
     if (!nw) { free(old); return; }
-    wsprintfW(nw, L"%s;%s", old, APP_DIR);
+    wsprintfW(nw, L"%s;%s", p, APP_DIR);
     RegSetKeyValueW(HKEY_CURRENT_USER, L"Environment", L"Path", REG_EXPAND_SZ, nw, (DWORD)((wcslen(nw)+1)*sizeof(wchar_t)));
     free(nw); free(old);
+    notify_env();
 }
 static void path_remove(void) {
     DWORD sz = 32767;

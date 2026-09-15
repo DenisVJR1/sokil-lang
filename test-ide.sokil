@@ -1,0 +1,10 @@
+let i = 0
+while i < 5 {
+    i = i + 1
+    print("рядок " + str(i))
+}
+fn add(a, b) { return a + b }
+print(add(2, 3))
+print("hi" * 3)
+let sokil = input("як тебе звати? ")
+print("привіт, " + sokil)

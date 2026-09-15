@@ -1405,8 +1405,177 @@ static Value b_random(Interp *I, Value *a, int n) {
         return mk_num(lo + floor(r * (hi - lo)));
     }
     err_raise(I, "random() очікує 0–2 аргументи");
-    return mk_nil();
 }
+
+/* ===== Математичні ===== */
+static Value b_sin(Interp *I, Value *a, int n) { if (n!=1) err_raise(I,"sin() 1 arg"); return mk_num(sin(need_num(I,a[0]))); }
+static Value b_cos(Interp *I, Value *a, int n) { if (n!=1) err_raise(I,"cos() 1 arg"); return mk_num(cos(need_num(I,a[0]))); }
+static Value b_tan(Interp *I, Value *a, int n) { if (n!=1) err_raise(I,"tan() 1 arg"); return mk_num(tan(need_num(I,a[0]))); }
+static Value b_log(Interp *I, Value *a, int n) { if (n!=1) err_raise(I,"log() 1 arg"); double x=need_num(I,a[0]); if(x<=0)err_raise(I,"log() >0"); return mk_num(log(x)); }
+static Value b_exp(Interp *I, Value *a, int n) { if (n!=1) err_raise(I,"exp() 1 arg"); return mk_num(exp(need_num(I,a[0]))); }
+static Value b_pi(Interp *I, Value *a, int n) { (void)I;(void)a;(void)n; return mk_num(3.14159265358979323846); }
+static Value b_e(Interp *I, Value *a, int n) { (void)I;(void)a;(void)n; return mk_num(2.71828182845904523536); }
+static Value b_deg(Interp *I, Value *a, int n) { if (n!=1) err_raise(I,"deg() 1 arg"); return mk_num(need_num(I,a[0])*180.0/3.141592653589793); }
+static Value b_rad(Interp *I, Value *a, int n) { if (n!=1) err_raise(I,"rad() 1 arg"); return mk_num(need_num(I,a[0])*3.141592653589793/180.0); }
+
+/* ===== Масив: map, filter, reduce, reverse, shuffle, sum, slice ===== */
+static Value b_map(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_ARR || a[1].type != V_FUNC && a[1].type != V_NATIVE) err_raise(I, "map(arr, fn) → масив");
+    Value src = a[0]; Value fn = a[1]; Value dst; dst.type = V_ARR; dst.len = src.len; dst.items = (Value *)a_alloc(I->a, (size_t)dst.len * sizeof(Value));
+    for (int i = 0; i < src.len; i++) {
+        Value args[1] = { src.items[i] };
+        dst.items[i] = (fn.type == V_NATIVE) ? fn.native(I, args, 1) : call_func(I, fn.fn, fn.closure, args, 1);
+    }
+    return dst;
+}
+static Value b_filter(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_ARR || a[1].type != V_FUNC && a[1].type != V_NATIVE) err_raise(I, "filter(arr, fn) → масив");
+    Value src = a[0]; Value fn = a[1]; Value *tmp = (Value *)a_alloc(I->a, (size_t)src.len * sizeof(Value)); int cnt = 0;
+    for (int i = 0; i < src.len; i++) {
+        Value args[1] = { src.items[i] };
+        Value r = (fn.type == V_NATIVE) ? fn.native(I, args, 1) : call_func(I, fn.fn, fn.closure, args, 1);
+        int truthy = 0;
+        if (r.type == V_BOOL) truthy = r.num; else if (r.type == V_NUM) truthy = r.num != 0; else if (r.type == V_STR) truthy = strlen(r.str) > 0; else if (r.type == V_ARR) truthy = r.len > 0;
+        if (truthy) tmp[cnt++] = src.items[i];
+    }
+    Value dst; dst.type = V_ARR; dst.len = cnt; dst.items = (Value *)a_alloc(I->a, (size_t)cnt * sizeof(Value));
+    for (int i = 0; i < cnt; i++) dst.items[i] = tmp[i];
+    return dst;
+}
+static Value b_reduce(Interp *I, Value *a, int n) {
+    if (n != 3 || a[0].type != V_ARR || a[1].type != V_FUNC && a[1].type != V_NATIVE) err_raise(I, "reduce(arr, fn, init) → значення");
+    Value src = a[0]; Value fn = a[1]; Value acc = a[2];
+    for (int i = 0; i < src.len; i++) {
+        Value args[2] = { acc, src.items[i] };
+        acc = (fn.type == V_NATIVE) ? fn.native(I, args, 2) : call_func(I, fn.fn, fn.closure, args, 2);
+    }
+    return acc;
+}
+static Value b_reverse(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_ARR) err_raise(I, "reverse(arr) → масив");
+    Value src = a[0]; Value dst; dst.type = V_ARR; dst.len = src.len; dst.items = (Value *)a_alloc(I->a, (size_t)dst.len * sizeof(Value));
+    for (int i = 0; i < src.len; i++) dst.items[i] = src.items[src.len - 1 - i];
+    return dst;
+}
+static Value b_shuffle(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_ARR) err_raise(I, "shuffle(arr) → масив");
+    Value src = a[0]; Value dst; dst.type = V_ARR; dst.len = src.len; dst.items = (Value *)a_alloc(I->a, (size_t)dst.len * sizeof(Value));
+    for (int i = 0; i < src.len; i++) dst.items[i] = src.items[i];
+    for (int i = src.len - 1; i > 0; i--) {
+        int j = (int)(rand() / ((double)RAND_MAX + 1.0) * (i + 1));
+        Value t = dst.items[i]; dst.items[i] = dst.items[j]; dst.items[j] = t;
+    }
+    return dst;
+}
+static Value b_sum(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_ARR) err_raise(I, "sum(arr) → число");
+    double s = 0; for (int i = 0; i < a[0].len; i++) if (a[0].items[i].type == V_NUM) s += a[0].items[i].num;
+    return mk_num(s);
+}
+static Value b_slice(Interp *I, Value *a, int n) {
+    if (n < 2 || n > 3 || a[0].type != V_ARR) err_raise(I, "slice(arr, start[, end]) → масив");
+    Value src = a[0]; int start = (int)need_num(I, a[1]); int end = (n==3) ? (int)need_num(I, a[2]) : src.len;
+    if (start < 0) start = src.len + start; if (start < 0) start = 0;
+    if (end < 0) end = src.len + end; if (end > src.len) end = src.len; if (end < start) end = start;
+    Value dst; dst.type = V_ARR; dst.len = end - start; dst.items = (Value *)a_alloc(I->a, (size_t)dst.len * sizeof(Value));
+    for (int i = 0; i < dst.len; i++) dst.items[i] = src.items[start + i];
+    return dst;
+}
+
+/* ===== Рядки: upper, lower, trim, replace, startswith, endswith, substr ===== */
+static Value b_upper(Interp *I, Value *a, int n) { if (n!=1 || a[0].type!=V_STR) err_raise(I,"upper(str)"); char *s=a_strdup(I->a,a[0].str); for(char*p=s;*p;p++) if(*p>='a'&&*p<='z')*p=*p-'a'+'A'; return mk_str(s); }
+static Value b_lower(Interp *I, Value *a, int n) { if (n!=1 || a[0].type!=V_STR) err_raise(I,"lower(str)"); char *s=a_strdup(I->a,a[0].str); for(char*p=s;*p;p++) if(*p>='A'&&*p<='Z')*p=*p-'A'+'a'; return mk_str(s); }
+static Value b_trim(Interp *I, Value *a, int n) { if (n!=1 || a[0].type!=V_STR) err_raise(I,"trim(str)"); char *s=a[0].str; while(*s==' '||*s=='\t'||*s=='\n'||*s=='\r')s++; char *e=s+strlen(s)-1; while(e>=s&&(*e==' '||*e=='\t'||*e=='\n'||*e=='\r'))e--; size_t l=e-s+1; char *r=(char*)a_alloc(I->a,l+1); memcpy(r,s,l); r[l]=0; return mk_str(r); }
+static Value b_replace(Interp *I, Value *a, int n) {
+    if (n!=3 || a[0].type!=V_STR || a[1].type!=V_STR || a[2].type!=V_STR) err_raise(I,"replace(str,from,to)");
+    const char *s=a[0].str, *from=a[1].str, *to=a[2].str; size_t fl=strlen(from); if(fl==0) return a[0];
+    size_t cap=strlen(s)*2+1; char *buf=(char*)a_alloc(I->a,cap); size_t o=0;
+    for(const char *p=s; *p; ) {
+        if(strncmp(p,from,fl)==0) { memcpy(buf+o,to,strlen(to)); o+=strlen(to); p+=fl; }
+        else buf[o++]=*p++;
+    } buf[o]=0; return mk_str(buf);
+}
+static Value b_startswith(Interp *I, Value *a, int n) { if(n!=2||a[0].type!=V_STR||a[1].type!=V_STR) err_raise(I,"startswith(str,pref)"); return mk_num(strncmp(a[0].str,a[1].str,strlen(a[1].str))==0); }
+static Value b_endswith(Interp *I, Value *a, int n) { if(n!=2||a[0].type!=V_STR||a[1].type!=V_STR) err_raise(I,"endswith(str,suf)"); size_t sl=strlen(a[0].str),pl=strlen(a[1].str); return mk_num(sl>=pl&&strcmp(a[0].str+sl-pl,a[1].str)==0); }
+static Value b_substr(Interp *I, Value *a, int n) {
+    if(n<2||n>3||a[0].type!=V_STR) err_raise(I,"substr(str,start[,len])");
+    const char *s=a[0].str; int start=(int)need_num(I,a[1]); int len=(n==3)?(int)need_num(I,a[2]):strlen(s);
+    if(start<0) start=strlen(s)+start; if(start<0) start=0; if(start>(int)strlen(s)) return mk_str(a_strdup(I->a,""));
+    if(start+len>strlen(s)) len=strlen(s)-start; if(len<0) len=0;
+    char *r=(char*)a_alloc(I->a,len+1); memcpy(r,s+start,len); r[len]=0; return mk_str(r);
+}
+
+/* ===== Типи ===== */
+static Value b_is_num(Interp *I, Value *a, int n) { (void)I; return mk_num(n==1&&a[0].type==V_NUM); }
+static Value b_is_str(Interp *I, Value *a, int n) { (void)I; return mk_num(n==1&&a[0].type==V_STR); }
+static Value b_is_arr(Interp *I, Value *a, int n) { (void)I; return mk_num(n==1&&a[0].type==V_ARR); }
+static Value b_is_bool(Interp *I, Value *a, int n) { (void)I; return mk_num(n==1&&a[0].type==V_BOOL); }
+static Value b_is_nil(Interp *I, Value *a, int n) { (void)I; return mk_num(n==1&&a[0].type==V_NIL); }
+static Value b_is_func(Interp *I, Value *a, int n) { (void)I; return mk_num(n==1&&(a[0].type==V_FUNC||a[0].type==V_NATIVE)); }
+
+/* ===== Файли ===== */
+static Value b_read_file(Interp *I, Value *a, int n) {
+    if (n!=1 || a[0].type!=V_STR) err_raise(I,"read_file(path)");
+    FILE *f=fopen(a[0].str,"rb"); if(!f) err_raise(I,"read_file: не вдалося відкрити");
+    fseek(f,0,SEEK_END); long sz=ftell(f); fseek(f,0,SEEK_SET);
+    char *buf=(char*)a_alloc(I->a,sz+1); fread(buf,1,sz,f); buf[sz]=0; fclose(f);
+    return mk_str(buf);
+}
+static Value b_write_file(Interp *I, Value *a, int n) {
+    if (n!=2 || a[0].type!=V_STR || a[1].type!=V_STR) err_raise(I,"write_file(path,content)");
+    FILE *f=fopen(a[0].str,"wb"); if(!f) err_raise(I,"write_file: не вдалося відкрити");
+    fwrite(a[1].str,1,strlen(a[1].str),f); fclose(f); return mk_nil();
+}
+static Value b_append_file(Interp *I, Value *a, int n) {
+    if (n!=2 || a[0].type!=V_STR || a[1].type!=V_STR) err_raise(I,"append_file(path,content)");
+    FILE *f=fopen(a[0].str,"ab"); if(!f) err_raise(I,"append_file: не вдалося відкрити");
+    fwrite(a[1].str,1,strlen(a[1].str),f); fclose(f); return mk_nil();
+}
+static Value b_exists(Interp *I, Value *a, int n) {
+    if (n!=1 || a[0].type!=V_STR) err_raise(I,"exists(path)");
+    DWORD attr=GetFileAttributesA(a[0].str); return mk_num(attr!=INVALID_FILE_ATTRIBUTES);
+}
+static Value b_is_file(Interp *I, Value *a, int n) {
+    if (n!=1 || a[0].type!=V_STR) err_raise(I,"is_file(path)");
+    DWORD attr=GetFileAttributesA(a[0].str); return mk_num(attr!=INVALID_FILE_ATTRIBUTES && !(attr&FILE_ATTRIBUTE_DIRECTORY));
+}
+static Value b_is_dir(Interp *I, Value *a, int n) {
+    if (n!=1 || a[0].type!=V_STR) err_raise(I,"is_dir(path)");
+    DWORD attr=GetFileAttributesA(a[0].str); return mk_num(attr!=INVALID_FILE_ATTRIBUTES && (attr&FILE_ATTRIBUTE_DIRECTORY));
+}
+static Value b_list_dir(Interp *I, Value *a, int n) {
+    if (n!=1 || a[0].type!=V_STR) err_raise(I,"list_dir(path)");
+    char pattern[MAX_PATH]; snprintf(pattern,sizeof pattern,"%s\\*",a[0].str);
+    WIN32_FIND_DATAA fd; HANDLE h=FindFirstFileA(pattern,&fd);
+    if(h==INVALID_HANDLE_VALUE) err_raise(I,"list_dir: не вдалося");
+    Value *tmp=(Value*)a_alloc(I->a,256*sizeof(Value)); int cnt=0;
+    do {
+        if(strcmp(fd.cFileName,".")!=0 && strcmp(fd.cFileName,"..")!=0) {
+            tmp[cnt++] = mk_str(a_strdup(I->a,fd.cFileName));
+            if(cnt>=256) break;
+        }
+    } while(FindNextFileA(h,&fd) && cnt<256); FindClose(h);
+    Value dst; dst.type=V_ARR; dst.len=cnt; dst.items=(Value*)a_alloc(I->a,(size_t)cnt*sizeof(Value));
+    for(int i=0;i<cnt;i++) dst.items[i]=tmp[i]; return dst;
+}
+
+/* ===== Час ===== */
+static Value b_date(Interp *I, Value *a, int n) {
+    time_t t = time(NULL); struct tm *tm = localtime(&t);
+    char buf[64]; strftime(buf,sizeof buf,"%Y-%m-%d %H:%M:%S",tm); return mk_str(a_strdup(I->a,buf));
+}
+static Value b_format_time(Interp *I, Value *a, int n) {
+    if (n!=2 || a[0].type!=V_STR || a[1].type!=V_NUM) err_raise(I,"format_time(fmt,ts)");
+    time_t t = (time_t)need_num(I,a[1]); struct tm *tm = localtime(&t);
+    char buf[128]; strftime(buf,sizeof buf,a[0].str,tm); return mk_str(a_strdup(I->a,buf));
+}
+
+/* ===== Система ===== */
+static Value b_system(Interp *I, Value *a, int n) {
+    if (n!=1 || a[0].type!=V_STR) err_raise(I,"system(cmd)");
+    int r = system(a[0].str); return mk_num(r);
+}
+static Value b_pid(Interp *I, Value *a, int n) { (void)I;(void)a;(void)n; return mk_num((double)GetCurrentProcessId()); }
 
 static void install_builtins(Interp *I) {
     Env *g = I->env;
@@ -1435,6 +1604,53 @@ static void install_builtins(Interp *I) {
     Value ct; ct.type = V_NATIVE; ct.native = b_contains; ct.fnname = "contains"; env_set(g, "contains", ct);
     Value nw; nw.type = V_NATIVE; nw.native = b_now; nw.fnname = "now"; env_set(g, "now", nw);
     Value sr; sr.type = V_NATIVE; sr.native = b_sort; sr.fnname = "sort"; env_set(g, "sort", sr);
+    /* math */
+    Value s1; s1.type = V_NATIVE; s1.native = b_sin; s1.fnname = "sin"; env_set(g, "sin", s1);
+    Value s2; s2.type = V_NATIVE; s2.native = b_cos; s2.fnname = "cos"; env_set(g, "cos", s2);
+    Value s3; s3.type = V_NATIVE; s3.native = b_tan; s3.fnname = "tan"; env_set(g, "tan", s3);
+    Value s4; s4.type = V_NATIVE; s4.native = b_log; s4.fnname = "log"; env_set(g, "log", s4);
+    Value s5; s5.type = V_NATIVE; s5.native = b_exp; s5.fnname = "exp"; env_set(g, "exp", s5);
+    Value s6; s6.type = V_NATIVE; s6.native = b_pi; s6.fnname = "pi"; env_set(g, "pi", s6);
+    Value s7; s7.type = V_NATIVE; s7.native = b_e; s7.fnname = "e"; env_set(g, "e", s7);
+    Value s8; s8.type = V_NATIVE; s8.native = b_deg; s8.fnname = "deg"; env_set(g, "deg", s8);
+    Value s9; s9.type = V_NATIVE; s9.native = b_rad; s9.fnname = "rad"; env_set(g, "rad", s9);
+    /* array */
+    Value am; am.type = V_NATIVE; am.native = b_map; am.fnname = "map"; env_set(g, "map", am);
+    Value af; af.type = V_NATIVE; af.native = b_filter; af.fnname = "filter"; env_set(g, "filter", af);
+    Value ar; ar.type = V_NATIVE; ar.native = b_reduce; ar.fnname = "reduce"; env_set(g, "reduce", ar);
+    Value av2; av2.type = V_NATIVE; av2.native = b_reverse; av2.fnname = "reverse"; env_set(g, "reverse", av2);
+    Value as; as.type = V_NATIVE; as.native = b_shuffle; as.fnname = "shuffle"; env_set(g, "shuffle", as);
+    Value asum; asum.type = V_NATIVE; asum.native = b_sum; asum.fnname = "sum"; env_set(g, "sum", asum);
+    Value asl; asl.type = V_NATIVE; asl.native = b_slice; asl.fnname = "slice"; env_set(g, "slice", asl);
+    /* string */
+    Value su; su.type = V_NATIVE; su.native = b_upper; su.fnname = "upper"; env_set(g, "upper", su);
+    Value slo; slo.type = V_NATIVE; slo.native = b_lower; slo.fnname = "lower"; env_set(g, "lower", slo);
+    Value strim; strim.type = V_NATIVE; strim.native = b_trim; strim.fnname = "trim"; env_set(g, "trim", strim);
+    Value srepl; srepl.type = V_NATIVE; srepl.native = b_replace; srepl.fnname = "replace"; env_set(g, "replace", srepl);
+    Value ssw; ssw.type = V_NATIVE; ssw.native = b_startswith; ssw.fnname = "startswith"; env_set(g, "startswith", ssw);
+    Value sew; sew.type = V_NATIVE; sew.native = b_endswith; sew.fnname = "endswith"; env_set(g, "endswith", sew);
+    Value ssub; ssub.type = V_NATIVE; ssub.native = b_substr; ssub.fnname = "substr"; env_set(g, "substr", ssub);
+    /* types */
+    Value tn; tn.type = V_NATIVE; tn.native = b_is_num; tn.fnname = "is_num"; env_set(g, "is_num", tn);
+    Value ts; ts.type = V_NATIVE; ts.native = b_is_str; ts.fnname = "is_str"; env_set(g, "is_str", ts);
+    Value ta; ta.type = V_NATIVE; ta.native = b_is_arr; ta.fnname = "is_arr"; env_set(g, "is_arr", ta);
+    Value tb; tb.type = V_NATIVE; tb.native = b_is_bool; tb.fnname = "is_bool"; env_set(g, "is_bool", tb);
+    Value tni; tni.type = V_NATIVE; tni.native = b_is_nil; tni.fnname = "is_nil"; env_set(g, "is_nil", tni);
+    Value tf; tf.type = V_NATIVE; tf.native = b_is_func; tf.fnname = "is_func"; env_set(g, "is_func", tf);
+    /* files */
+    Value fr; fr.type = V_NATIVE; fr.native = b_read_file; fr.fnname = "read_file"; env_set(g, "read_file", fr);
+    Value fw; fw.type = V_NATIVE; fw.native = b_write_file; fw.fnname = "write_file"; env_set(g, "write_file", fw);
+    Value fa; fa.type = V_NATIVE; fa.native = b_append_file; fa.fnname = "append_file"; env_set(g, "append_file", fa);
+    Value fe; fe.type = V_NATIVE; fe.native = b_exists; fe.fnname = "exists"; env_set(g, "exists", fe);
+    Value ffi; ffi.type = V_NATIVE; ffi.native = b_is_file; ffi.fnname = "is_file"; env_set(g, "is_file", ffi);
+    Value fdi; fdi.type = V_NATIVE; fdi.native = b_is_dir; fdi.fnname = "is_dir"; env_set(g, "is_dir", fdi);
+    Value fls; fls.type = V_NATIVE; fls.native = b_list_dir; fls.fnname = "list_dir"; env_set(g, "list_dir", fls);
+    /* time */
+    Value dt; dt.type = V_NATIVE; dt.native = b_date; dt.fnname = "date"; env_set(g, "date", dt);
+    Value ft; ft.type = V_NATIVE; ft.native = b_format_time; ft.fnname = "format_time"; env_set(g, "format_time", ft);
+    /* system */
+    Value sys; sys.type = V_NATIVE; sys.native = b_system; sys.fnname = "system"; env_set(g, "system", sys);
+    Value pid; pid.type = V_NATIVE; pid.native = b_pid; pid.fnname = "pid"; env_set(g, "pid", pid);
     /* args — аргументи командного рядка */
     Value av; av.type = V_ARR;
     av.len = g_argc > g_args_start ? g_argc - g_args_start : 0;
