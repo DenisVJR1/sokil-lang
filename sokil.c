@@ -18,6 +18,12 @@
 #include <setjmp.h>
 #include <ctype.h>
 #include <math.h>
+#include <time.h>
+
+/* аргументи командного рядка — видимі як args у програмі */
+static char **g_argv;
+static int g_argc;
+static int g_args_start = 2;  /* де починаються користувацькі аргументи */
 
 #if defined(__GNUC__) || defined(__clang__)
 #define NORETURN __attribute__((noreturn))
@@ -1298,6 +1304,23 @@ static Value b_exit(Interp *I, Value *a, int n) {
     exit(code);
 }
 
+static Value b_random(Interp *I, Value *a, int n) {
+    double r = rand() / ((double)RAND_MAX + 1.0);
+    if (n == 0) return mk_num(r);
+    if (n == 1) {
+        double m = need_num(I, a[0]);
+        if (m <= 0) err_raise(I, "random(): має бути додатне");
+        return mk_num(floor(r * m));
+    }
+    if (n == 2) {
+        double lo = need_num(I, a[0]), hi = need_num(I, a[1]);
+        if (hi <= lo) err_raise(I, "random(): кінець має бути більший");
+        return mk_num(lo + floor(r * (hi - lo)));
+    }
+    err_raise(I, "random() очікує 0–2 аргументи");
+    return mk_nil();
+}
+
 static void install_builtins(Interp *I) {
     Env *g = I->env;
     Value p; p.type = V_NATIVE; p.native = b_print; p.fnname = "print"; env_set(g, "print", p);
@@ -1320,6 +1343,14 @@ static void install_builtins(Interp *I) {
     Value jn; jn.type = V_NATIVE; jn.native = b_join; jn.fnname = "join"; env_set(g, "join", jn);
     Value sp; sp.type = V_NATIVE; sp.native = b_split; sp.fnname = "split"; env_set(g, "split", sp);
     Value ex; ex.type = V_NATIVE; ex.native = b_exit; ex.fnname = "exit"; env_set(g, "exit", ex);
+    Value rn; rn.type = V_NATIVE; rn.native = b_random; rn.fnname = "random"; env_set(g, "random", rn);
+    /* args — аргументи командного рядка */
+    Value av; av.type = V_ARR;
+    av.len = g_argc > g_args_start ? g_argc - g_args_start : 0;
+    av.items = (Value *)a_alloc(I->a, (size_t)(av.len ? av.len : 1) * sizeof(Value));
+    for (int i = g_args_start; i < g_argc; i++)
+        av.items[i - g_args_start] = mk_str(a_strdup(I->a, g_argv[i]));
+    env_set(g, "args", av);
 }
 
 /* ═══════════ Запуск ═══════════ */
@@ -1404,7 +1435,18 @@ static char *read_file(Arena *a, const char *path, int *ok) {
 }
 
 int main(int argc, char **argv) {
+    g_argc = argc; g_argv = argv;
+    srand((unsigned)time(NULL));
     if (argc > 1) {
+        if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
+            g_args_start = 3;
+            if (argc < 3) {
+                fprintf(stderr, "Використання: sokil -e \"код\"\n");
+                return 1;
+            }
+            return run_source(argv[2]);
+        }
+        g_args_start = 2;
         Arena a = {0};
         int ok;
         char *src = read_file(&a, argv[1], &ok);
@@ -1414,6 +1456,7 @@ int main(int argc, char **argv) {
         }
         return run_source(src);
     }
+    g_args_start = 0;
     repl();
     return 0;
 }

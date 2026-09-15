@@ -1,14 +1,11 @@
 /*
- * Сокіл — власний інсталятор мови (100% свій, на C).
- * Вбудовує sokil.exe у себе, копіює у %LOCALAPPDATA%\Sokil,
- * прописує PATH у реєстрі (HKCU) як Python installer.
+ * Сокіл — власний GUI-інсталятор (100% свій, на C).
+ * Вікно Setup з кнопками Встановити / Видалити.
+ * Вбудовує sokil.exe, копіює у %LOCALAPPDATA%\Sokil,
+ * прописує PATH та реєструє асоціацію файлів .sokil.
  *
  * Збірка: gcc -O2 -std=c99 -static -o Sokil-Setup.exe installer.c
- *
- * Запуск:
- *   Sokil-Setup.exe              — інтерактивне меню
- *   Sokil-Setup.exe --install    — тиха установка
- *   Sokil-Setup.exe --uninstall  — видалення
+ *         -luser32 -ladvapi32 -lshell32 -mwindows
  */
 
 #include <windows.h>
@@ -16,145 +13,159 @@
 #include <string.h>
 #include "sokil_exe.h"
 
-static void app_dir(char *buf, size_t n) {
-    GetEnvironmentVariableA("LOCALAPPDATA", buf, (DWORD)n);
-    if (buf[0] == '\0') {          /* фолбек: %USERPROFILE%\AppData\Local */
-        GetEnvironmentVariableA("USERPROFILE", buf, (DWORD)n);
-        strncat(buf, "\\AppData\\Local", n - strlen(buf) - 1);
-    }
-    strncat(buf, "\\Sokil", n - strlen(buf) - 1);
+#define BTN_INSTALL   1001
+#define BTN_UNINSTALL 1002
+
+static char APP_DIR[MAX_PATH];
+static HWND hStatus;
+static HBRUSH hbrBg;
+static HFONT hFont;
+
+static void init_app_dir(void) {
+    GetEnvironmentVariableA("LOCALAPPDATA", APP_DIR, MAX_PATH);
+    if (APP_DIR[0] == '\0')
+        { GetEnvironmentVariableA("USERPROFILE", APP_DIR, MAX_PATH); lstrcatA(APP_DIR, "\\AppData\\Local"); }
+    lstrcatA(APP_DIR, "\\Sokil");
 }
 
-static void notify_path_change(void) {
-    SendMessageTimeoutA(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
-        (LPARAM)"Environment", SMTO_ABORTIFHUNG, 5000, NULL);
+/* ── PATH ── */
+static void notify(void) {
+    SendMessageTimeoutA(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)"Environment", SMTO_ABORTIFHUNG, 5000, NULL);
 }
-
-static int path_has(const char *path, const char *dir) {
-    char t[4096], d[4096];
-    snprintf(t, sizeof t, ";%s;", path);
-    snprintf(d, sizeof d, ";%s;", dir);
-    return strstr(t, d) != NULL;
-}
-
-static int get_user_path(char *buf, size_t n) {
-    DWORD sz = (DWORD)n;
+static int get_path(char *buf, DWORD n) {
+    DWORD sz = n;
     LONG r = RegGetValueA(HKEY_CURRENT_USER, "Environment", "Path",
-                          RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, NULL, buf, &sz);
-    if (r != ERROR_SUCCESS || sz == 0) { buf[0] = '\0'; return 0; }
-    buf[n - 1] = '\0';
-    return 1;
+                          RRF_RT_REG_SZ|RRF_RT_REG_EXPAND_SZ, NULL, buf, &sz);
+    if (r != ERROR_SUCCESS) { buf[0] = '\0'; return 0; }
+    buf[n-1] = '\0'; return 1;
+}
+static void add_to_path(const char *dir) {
+    char path[4096]; get_path(path, sizeof path);
+    if (strstr(path, dir)) return;
+    char np[8192]; wsprintfA(np, "%s;%s", path, dir);
+    RegSetKeyValueA(HKEY_CURRENT_USER, "Environment", "Path", REG_EXPAND_SZ, np, (DWORD)strlen(np)+1);
+    notify();
+}
+static void remove_from_path(const char *dir) {
+    char path[4096]; get_path(path, sizeof path);
+    char *p = strstr(path, dir); if (!p) return;
+    if (p > path && p[-1] == ';') p--;
+    else p += strlen(dir);
+    memmove(p, p + strlen(p) - strlen(p) + strlen(p + strlen(dir) + (p[-1]==';' ? 0 : 1)),
+            strlen(p + strlen(dir) + 1) + 1);
+    /* простий підхід: перебудувати */
+    { char *s = path, *o = path; while (*s) {
+        if (s == strstr(s, dir)) { s += strlen(dir); if (*s == ';') s++; }
+        else { while (*s && *s != ';') *o++ = *s++; if (*s == ';') *o++ = *s++; }
+    } *o = '\0'; }
+    RegSetKeyValueA(HKEY_CURRENT_USER, "Environment", "Path", REG_EXPAND_SZ, path, (DWORD)strlen(path)+1);
+    notify();
 }
 
-static int add_to_path(const char *dir) {
-    char path[4096];
-    get_user_path(path, sizeof path);
-    if (path_has(path, dir)) return 1;              /* уже є */
-    char newpath[8192];
-    snprintf(newpath, sizeof newpath, "%s;%s", path, dir);
-    LONG r = RegSetKeyValueA(HKEY_CURRENT_USER, "Environment", "Path",
-                             REG_EXPAND_SZ, newpath, (DWORD)strlen(newpath) + 1);
-    if (r != ERROR_SUCCESS) {
-        fprintf(stderr, "Помилка запису PATH (код %ld)\n", r);
+/* ── Асоціація .sokil ── */
+static void assoc_add(const char *exe) {
+    char cmd[512]; wsprintfA(cmd, "\"%s\" \"%%1\"", exe);
+    RegSetKeyValueA(HKEY_CURRENT_USER, "Software\\Classes", ".sokil", REG_SZ, "SokilScript", 0);
+    RegSetKeyValueA(HKEY_CURRENT_USER, "Software\\Classes\\SokilScript", NULL, REG_SZ, "Sokil Script", 0);
+    RegSetKeyValueA(HKEY_CURRENT_USER, "Software\\Classes\\SokilScript\\shell\\open\\command", NULL, REG_SZ, cmd, 0);
+}
+static void assoc_del(void) {
+    RegDeleteTreeA(HKEY_CURRENT_USER, "Software\\Classes\\.sokil");
+    RegDeleteTreeA(HKEY_CURRENT_USER, "Software\\Classes\\SokilScript");
+}
+
+/* ── Install / Uninstall ── */
+static BOOL do_install(void) {
+    if (!CreateDirectoryA(APP_DIR, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FALSE;
+    char exe[MAX_PATH]; wsprintfA(exe, "%s\\sokil.exe", APP_DIR);
+    HANDLE h = CreateFileA(exe, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return FALSE;
+    DWORD w; WriteFile(h, sokil_exe_data, sokil_exe_len, &w, NULL); CloseHandle(h);
+    if (w != sokil_exe_len) return FALSE;
+    add_to_path(APP_DIR);
+    assoc_add(exe);
+    return TRUE;
+}
+static BOOL do_uninstall(void) {
+    assoc_del();
+    remove_from_path(APP_DIR);
+    char exe[MAX_PATH]; wsprintfA(exe, "%s\\sokil.exe", APP_DIR);
+    DeleteFileA(exe); RemoveDirectoryA(APP_DIR);
+    return TRUE;
+}
+
+/* ── GUI ── */
+static void set_status(const char *txt, COLORREF col) {
+    SetWindowTextA(hStatus, txt);
+    if (hbrBg) DeleteObject(hbrBg);
+    hbrBg = CreateSolidBrush(col);
+    InvalidateRect(hStatus, NULL, TRUE);
+}
+
+static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_CREATE: {
+        hFont = CreateFontA(16, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+            DEFAULT_CHARSET, 0, 0, 0, 0, "Segoe UI");
+        HWND hTitle = CreateWindowA("STATIC",
+            "  Sokil (Сокіл) — Встановлення мови програмування",
+            WS_CHILD|WS_VISIBLE|SS_LEFT, 20, 20, 360, 30, hw, NULL, NULL, NULL);
+        SendMessage(hTitle, WM_SETFONT, (WPARAM)hFont, TRUE);
+        char info[512];
+        wsprintfA(info, "Каталог: %s\nАсоціація: .sokil\nPATH + реєстр", APP_DIR);
+        HWND hInfo = CreateWindowA("STATIC", info,
+            WS_CHILD|WS_VISIBLE|SS_LEFT, 20, 60, 360, 60, hw, NULL, NULL, NULL);
+        SendMessage(hInfo, WM_SETFONT, (WPARAM)hFont, TRUE);
+        CreateWindowA("BUTTON", "Встановити",
+            WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON, 20, 140, 170, 40, hw, (HMENU)BTN_INSTALL, NULL, NULL);
+        CreateWindowA("BUTTON", "Видалити",
+            WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON, 210, 140, 170, 40, hw, (HMENU)BTN_UNINSTALL, NULL, NULL);
+        hStatus = CreateWindowA("STATIC", "",
+            WS_CHILD|WS_VISIBLE|SS_LEFT, 20, 200, 360, 30, hw, NULL, NULL, NULL);
+        SendMessage(hStatus, WM_SETFONT, (WPARAM)hFont, TRUE);
         return 0;
     }
-    notify_path_change();
-    return 1;
-}
-
-static int remove_from_path(const char *dir) {
-    char path[4096], out[8192];
-    get_user_path(path, sizeof path);
-    /* вирізаємо ;dir та dir; */
-    char *p = strstr(path, dir);
-    if (!p) return 1;
-    out[0] = '\0';
-    size_t o = 0;
-    const char *s = path;
-    while (s && *s) {
-        const char *f = strstr(s, dir);
-        if (!f || (f != s && f[-1] != ';')) {       /* не наш шлях */
-            size_t piece = f ? (size_t)(f - s) : strlen(s);
-            memcpy(out + o, s, piece); o += piece;
-            s = f ? f : s + piece;
-            continue;
+    case WM_COMMAND:
+        if (LOWORD(wp) == BTN_INSTALL)
+            set_status(do_install() ? "Встановлено! Відкрийте новий термінал:  sokil" : "Помилка!",
+                       do_install() ? 0 : 0);
+        if (LOWORD(wp) == BTN_UNINSTALL) {
+            do_uninstall();
+            set_status("Видалено. PATH та .sokil оновлено.", RGB(0,0,180));
         }
-        /* пропускаємо dir та навколишні ';' */
-        const char *e = f + strlen(dir);
-        if (e > s && s != f && f[-1] == ';' && (*e == ';' || *e == '\0')) {
-            o -= (size_t)(o > 0 && out[o-1] == ';');
-        }
-        if (*e == ';') e++;
-        s = e;
+        return 0;
+    case WM_CTLCOLORSTATIC:
+        if ((HWND)lp == hStatus && hbrBg) { SetBkMode((HDC)wp, TRANSPARENT); return (LRESULT)hbrBg; }
+        break;
+    case WM_DESTROY:
+        if (hFont) DeleteObject(hFont);
+        if (hbrBg) DeleteObject(hbrBg);
+        PostQuitMessage(0); return 0;
     }
-    out[o] = '\0';
-    LONG r = RegSetKeyValueA(HKEY_CURRENT_USER, "Environment", "Path",
-                             REG_EXPAND_SZ, out, (DWORD)strlen(out) + 1);
-    if (r != ERROR_SUCCESS) return 0;
-    notify_path_change();
-    return 1;
+    return DefWindowProcA(hw, msg, wp, lp);
 }
 
-static int install(void) {
-    char dir[MAX_PATH];
-    app_dir(dir, sizeof dir);
-    if (!CreateDirectoryA(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
-        fprintf(stderr, "Не вдалося створити %s\n", dir);
-        return 0;
-    }
-    char exe[MAX_PATH];
-    snprintf(exe, sizeof exe, "%s\\sokil.exe", dir);
-    HANDLE h = CreateFileA(exe, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) {
-        fprintf(stderr, "Не вдалося записати %s\n", exe);
-        return 0;
-    }
-    DWORD wrote = 0;
-    WriteFile(h, sokil_exe_data, sokil_exe_len, &wrote, NULL);
-    CloseHandle(h);
-    if (wrote != sokil_exe_len) {
-        fprintf(stderr, "Запис неповний\n");
-        return 0;
-    }
-    if (!add_to_path(dir)) return 0;
-    printf("Встановлено!\n");
-    printf("  Мова:      %s\n", exe);
-    printf("  PATH:      додано (відкрий новий термінал)\n");
-    printf("  Запуск:    sokil або sokil файл.sokil\n");
-    printf("  Видалення: Sokil-Setup.exe --uninstall\n");
-    return 1;
-}
-
-static int uninstall(void) {
-    char dir[MAX_PATH];
-    app_dir(dir, sizeof dir);
-    remove_from_path(dir);
-    char exe[MAX_PATH];
-    snprintf(exe, sizeof exe, "%s\\sokil.exe", dir);
-    DeleteFileA(exe);
-    RemoveDirectoryA(dir);
-    printf("Видалено. PATH оновлено (відкрий новий термінал).\n");
-    return 1;
+static int gui_main(void) {
+    WNDCLASSEXA wc = {0};
+    wc.cbSize = sizeof wc; wc.lpfnWndProc = WndProc;
+    wc.hInstance = GetModuleHandleA(NULL); wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); wc.lpszClassName = "SokilSetup";
+    RegisterClassExA(&wc);
+    HWND hw = CreateWindowExA(0, "SokilSetup", "Сокіл — Встановлення",
+        WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
+        CW_USEDEFAULT, CW_USEDEFAULT, 410, 270, NULL, NULL, wc.hInstance, NULL);
+    ShowWindow(hw, SW_SHOW);
+    MSG msg;
+    while (GetMessageA(&msg, NULL, 0, 0)) { TranslateMessage(&msg); DispatchMessageA(&msg); }
+    return (int)msg.wParam;
 }
 
 int main(int argc, char **argv) {
+    init_app_dir();
     if (argc > 1) {
-        if (!strcmp(argv[1], "--install"))   return install() ? 0 : 1;
-        if (!strcmp(argv[1], "--uninstall")) return uninstall() ? 0 : 1;
-        if (!strcmp(argv[1], "--version")) {
-            printf("Сокіл інсталятор v1.0\n");
-            return 0;
-        }
+        if (!strcmp(argv[1], "--install"))   { do_install();  return 0; }
+        if (!strcmp(argv[1], "--uninstall")) { do_uninstall(); return 0; }
+        if (!strcmp(argv[1], "--version"))   { printf("Sokil Setup v2.1\n"); return 0; }
     }
-    printf("=== Сокіл — інсталятор мови ===\n");
-    printf("1) Встановити\n");
-    printf("2) Видалити\n");
-    printf("3) Вийти\n");
-    printf("Вибір: ");
-    fflush(stdout);
-    char c = getchar();
-    if (c == '1') return install() ? 0 : 1;
-    if (c == '2') return uninstall() ? 0 : 1;
-    return 0;
+    return gui_main();
 }
