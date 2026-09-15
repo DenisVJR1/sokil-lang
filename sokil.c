@@ -174,19 +174,19 @@ static int lx_keyword(const char *s) {
     return 0;
 }
 
-static Token lx_string(Lexer *lx) {
+static Token lx_string(Lexer *lx, char open) {
     int line = lx->line;
-    lx_adv(lx);                               /* " */
+    lx_adv(lx);                               /* відкриваюча лапка */
     size_t start = lx->p;
     size_t len = 0;
     while (1) {
         char c = lx_adv(lx);
-        if (c == '"') break;
+        if (c == open) break;
         if (c == '\0' || c == '\n')
             fatal_fmt("Незакритий рядок (рядок %d)", line);
         if (c == '\\') {
             char e = lx_adv(lx);
-            if (e == 'n' || e == 't' || e == '\\' || e == '"') len++;
+            if (e == 'n' || e == 't' || e == '\\' || e == '"' || e == '\'') len++;
             else len += 2;
         } else len++;
     }
@@ -200,6 +200,7 @@ static Token lx_string(Lexer *lx) {
             else if (e == 't') c = '\t';
             else if (e == '\\') c = '\\';
             else if (e == '"') c = '"';
+            else if (e == '\'') c = '\'';
             else { out[o++] = '\\'; out[o++] = e; continue; }
             out[o++] = c;
         } else out[o++] = c;
@@ -253,7 +254,7 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
             }
             continue;
         }
-        if (c == '"') { lx_push(&lx, lx_string(&lx)); continue; }
+        if (c == '"' || c == '\'') { lx_push(&lx, lx_string(&lx, c)); continue; }
         if (isdigit((unsigned char)c)) { lx_push(&lx, lx_number(&lx)); continue; }
         if (isalpha((unsigned char)c) || c == '_') { lx_push(&lx, lx_ident(&lx)); continue; }
 
@@ -356,7 +357,8 @@ static Token pr_expect(Parser *p, int type) {
 }
 
 static void pr_skip_nl(Parser *p) {
-    while (pr_peek(p).type == T_NEWLINE) p->i++;
+    /* Пропускаємо переходи рядка І крапки з комою (роздільники операторів) */
+    while (pr_peek(p).type == T_NEWLINE || pr_peek(p).type == T_SEMICOLON) p->i++;
 }
 
 static Node *pr_expr(Parser *p);
@@ -886,6 +888,19 @@ static Value binop(Interp *I, const char *op, Value l, Value r) {
             memcpy(s, l.str, ll); memcpy(s + ll, r.str, rl + 1);
             return mk_str(s);
         }
+        if ((l.type == V_STR && r.type == V_NUM) || (l.type == V_NUM && r.type == V_STR)) {
+            /* "рядок" + число ⇒ конкатенація */
+            char numbuf[32];
+            double d = l.type == V_NUM ? l.num : r.num;
+            if (d == (double)(long long)d) snprintf(numbuf, sizeof numbuf, "%lld", (long long)d);
+            else snprintf(numbuf, sizeof numbuf, "%g", d);
+            const char *sa = l.type == V_STR ? l.str : numbuf;
+            const char *sb = r.type == V_STR ? r.str : numbuf;
+            size_t la = strlen(sa), lb = strlen(sb);
+            char *s = (char *)a_alloc(I->a, la + lb + 1);
+            memcpy(s, sa, la); memcpy(s + la, sb, lb + 1);
+            return mk_str(s);
+        }
         if (l.type == V_ARR && r.type == V_ARR) {
             Value v; v.type = V_ARR; v.len = l.len + r.len;
             v.items = (Value *)a_alloc(I->a, (size_t)v.len * sizeof(Value));
@@ -901,6 +916,16 @@ static Value binop(Interp *I, const char *op, Value l, Value r) {
     }
     if (!strcmp(op, "*")) {
         if (l.type == V_NUM && r.type == V_NUM) return mk_num(l.num * r.num);
+        if (l.type == V_STR && r.type == V_NUM) {
+            int times = (int)r.num;
+            if (times < 0) times = 0;
+            size_t sl = strlen(l.str), total = sl * (size_t)times;
+            char *buf = (char *)a_alloc(I->a, total + 1);
+            buf[0] = '\0';
+            for (int i = 0; i < times; i++) memcpy(buf + i * sl, l.str, sl);
+            buf[total] = '\0';
+            return mk_str(buf);
+        }
         err_raise(I, "Операція '*' лише для чисел");
     }
     if (!strcmp(op, "/")) {
@@ -1345,6 +1370,27 @@ static Value b_contains(Interp *I, Value *a, int n) {
     return mk_bool(strstr(a[0].str, a[1].str) != NULL);
 }
 
+static Value b_now(Interp *I, Value *a, int n) {
+    (void)I; (void)a; (void)n;
+    return mk_num((double)time(NULL));
+}
+
+static Value b_sort(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_ARR) err_raise(I, "sort() очікує масив");
+    double *arr = (double *)a_alloc(I->a, a[0].len * sizeof(double));
+    int cnt = 0;
+    for (int i = 0; i < a[0].len; i++)
+        if (a[0].items[i].type == V_NUM) arr[cnt++] = a[0].items[i].num;
+    for (int i = 1; i < cnt; i++) {
+        double k = arr[i];
+        int j = i - 1;
+        while (j >= 0 && arr[j] > k) { arr[j + 1] = arr[j]; j--; }
+        arr[j + 1] = k;
+    }
+    for (int i = 0; i < cnt; i++) { a[0].items[i].type = V_NUM; a[0].items[i].num = arr[i]; }
+    return a[0];
+}
+
 static Value b_random(Interp *I, Value *a, int n) {
     double r = rand() / ((double)RAND_MAX + 1.0);
     if (n == 0) return mk_num(r);
@@ -1387,6 +1433,8 @@ static void install_builtins(Interp *I) {
     Value rn; rn.type = V_NATIVE; rn.native = b_random; rn.fnname = "random"; env_set(g, "random", rn);
     Value sl; sl.type = V_NATIVE; sl.native = b_sleep; sl.fnname = "sleep"; env_set(g, "sleep", sl);
     Value ct; ct.type = V_NATIVE; ct.native = b_contains; ct.fnname = "contains"; env_set(g, "contains", ct);
+    Value nw; nw.type = V_NATIVE; nw.native = b_now; nw.fnname = "now"; env_set(g, "now", nw);
+    Value sr; sr.type = V_NATIVE; sr.native = b_sort; sr.fnname = "sort"; env_set(g, "sort", sr);
     /* args — аргументи командного рядка */
     Value av; av.type = V_ARR;
     av.len = g_argc > g_args_start ? g_argc - g_args_start : 0;
@@ -1399,8 +1447,8 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.3 — мова програмування\n"
-"  sokil файл.sokil · sokil -e \"код\" · sokil --update\n"
+"  Сокіл (Sokil) v2.5 — мова програмування\n"
+"  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
 
@@ -1433,7 +1481,7 @@ static int run_source(const char *src) {
 
 static void repl(void) {
     printf("%s", BANNER);
-    printf("Сокіл v2.0 — REPL (exit щоб вийти)\n");
+    printf("  REPL (exit — вийти)\n");
     Arena a = {0};
     Interp I;
     memset(&I, 0, sizeof I);
@@ -1530,6 +1578,116 @@ static int cmd_update(void) {
 }
 #endif
 
+/* ═══════════ --compile: .sokil → .exe (без компілятора C) ═══════════ */
+static const char EMBED_MARKER[] = "\n\x00SOKIL_EMBED\x00\n";
+
+/* Запуск вбудованого коду з кінця .exe */
+static int try_embedded(void) {
+    FILE *f;
+#ifdef _WIN32
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(NULL, self, MAX_PATH);
+    f = _wfopen(self, L"rb");
+#else
+    char self[4096];
+    ssize_t r = readlink("/proc/self/exe", self, sizeof self - 1);
+    if (r <= 0) return 0;
+    self[r] = '\0';
+    f = fopen(self, "rb");
+#endif
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    size_t mlen = sizeof(EMBED_MARKER) - 1;
+    if (sz < (long)(mlen + 4 + 10)) { fclose(f); return 0; }
+    /* Читаємо останні ~512KB для пошуку маркера */
+    long scan_from = sz > 524288 ? sz - 524288 : 0;
+    fseek(f, scan_from, SEEK_SET);
+    size_t chunk = (size_t)(sz - scan_from);
+    char *buf = (char *)malloc(chunk);
+    if (!buf) { fclose(f); return 0; }
+    size_t got = fread(buf, 1, chunk, f);
+    fclose(f);
+    char *hits[8];
+    int nh = 0;
+    for (size_t i = 0; i + mlen + 4 <= got && nh < 8; i++)
+        if (memcmp(buf + i, EMBED_MARKER, mlen) == 0) hits[nh++] = buf + i;
+    /* Валідний вбудований код: код закінчується точно на кінці файлу */
+    for (int hi = nh - 1; hi >= 0; hi--) {
+        char *hit = hits[hi];
+        unsigned int csz;
+        memcpy(&csz, hit + mlen, 4);
+        long code_abs = scan_from + (long)(hit - buf) + (long)mlen + 4;
+        if (csz > 0 && csz < (1u << 30) && code_abs + (long)csz == sz) {
+            char *src = (char *)malloc(csz + 1);
+            if (!src) { free(buf); return 0; }
+            memcpy(src, hit + mlen + 4, csz);
+            src[csz] = '\0';
+            free(buf);
+            static char *eargv[2] = { "sokil-embedded", NULL };
+            g_argc = 1; g_argv = eargv;
+            g_args_start = 0;
+            run_source(src);
+            free(src);
+            return 1;
+        }
+    }
+    free(buf);
+    return 0;
+}
+
+static int cmd_compile(const char *srcpath) {
+    FILE *f = fopen(srcpath, "rb");
+    if (!f) { fprintf(stderr, "Файл не знайдено: %s\n", srcpath); return 1; }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *src = malloc((size_t)sz + 1);
+    if (!src) { fclose(f); return 1; }
+    size_t n = fread(src, 1, (size_t)sz, f);
+    src[n] = '\0';
+    fclose(f);
+    /* Вихідний файл: замінюємо .sokil на .exe (якщо є) */
+    char outpath[4096];
+    strncpy(outpath, srcpath, sizeof outpath - 1);
+    outpath[sizeof outpath - 1] = '\0';
+    size_t l = strlen(outpath);
+    if (l > 6 && !strcmp(outpath + l - 6, ".sokil"))
+        strcpy(outpath + l - 6, ".exe");
+    else
+        strcpy(outpath + l, ".exe");
+    /* Копіюємо ourselves + маркер + код */
+    FILE *out = fopen(outpath, "wb");
+    if (!out) { fprintf(stderr, "Не вдалося створити: %s\n", outpath); free(src); return 1; }
+#ifdef _WIN32
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(NULL, self, MAX_PATH);
+    FILE *self_f = _wfopen(self, L"rb");
+#else
+    char self[4096];
+    ssize_t r = readlink("/proc/self/exe", self, sizeof self - 1);
+    self[r] = '\0';
+    FILE *self_f = fopen(self, "rb");
+#endif
+    fseek(self_f, 0, SEEK_END);
+    long self_sz = ftell(self_f);
+    fseek(self_f, 0, SEEK_SET);
+    char *buf = malloc((size_t)self_sz);
+    fread(buf, 1, (size_t)self_sz, self_f);
+    fclose(self_f);
+    fwrite(buf, 1, (size_t)self_sz, out);
+    free(buf);
+    /* Маркер: \n + name + \n + 4 байти довжини коду */
+    fwrite(EMBED_MARKER, 1, sizeof(EMBED_MARKER) - 1, out);
+    unsigned int csz = (unsigned int)n;
+    fwrite(&csz, 1, 4, out);
+    fwrite(src, 1, n, out);
+    fclose(out);
+    free(src);
+    printf("Готово: %s (%ld байт коду)\n", outpath, (long)n);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     g_argc = argc; g_argv = argv;
     srand((unsigned)time(NULL));
@@ -1537,10 +1695,13 @@ int main(int argc, char **argv) {
     SetConsoleOutputCP(65001);   /* UTF-8 вивід без крякозябр */
     SetConsoleCP(65001);
 #endif
+    if (argc > 1 && !strcmp(argv[1], "--compile"))
+        return cmd_compile(argc > 2 ? argv[2] : NULL);
+    if (try_embedded()) return 0;
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.3\n");
+            printf("Sokil v2.5\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
