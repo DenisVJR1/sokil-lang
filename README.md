@@ -1,175 +1,197 @@
-# Сокіл 🦅 (Sokil)
+# Сокіл 🦅 — Sokil Programming Language
 
-Дуже проста мова програмування. Одна реалізація на чистих C — нуль залежностей,
-нативний бінарник для Windows, Linux та macOS.
+Проста, але справжня мова програмування: нуль залежностей, один файл на чистому C (C99), нативні бінарники, власний інсталятор та власна IDE — все написано з нуля.
 
-## Збірка
+**Zero dependencies. 100% власний код.**
 
-```bash
-# Linux / macOS
-cc -O2 -std=c99 -lm -o sokil sokil.c
+---
 
-# Windows (MinGW)
-gcc -O2 -std=c99 -lm -o sokil.exe sokil.c
+## 🇺🇦 Українською
+
+### Можливості
+
+- ✅ Лексер → парсер → інтерпретатор (tree-walking) на чистому C — **без Python, без C-компілятора**
+- ✅ `sokil --compile файл.sokil` → **готовий .exe** (своя компіляція, C не потрібен)
+- ✅ `SokilIDE.exe` — **власна IDE** з підсвіткою синтаксису та запуском (встановлюється автоматично)
+- ✅ Windows / Linux / macOS
+- ✅ `sokil --update` — самооновлення з GitHub
+- ✅ Подвійний клік по `.sokil` — запуск (асоціація ставиться інсталятором)
+- ✅ Власний інсталятор-майстер (wizard) з анімованим фоном з коду
+
+### Встановлення (Windows)
+
+**Власний інсталятор** (написаний на C, вбудовує і `sokil.exe`, і `SokilIDE.exe`):
+
 ```
-
-Або готові збірки: [Releases](https://github.com/DenisVJR1/sokil-lang/releases).
-
-## Встановлення
-
-**Windows** — власний інсталятор (написаний на C, `installer.c`, вбудовує `sokil.exe`):
-```
-Sokil-Setup.exe            # інтерактивне меню
+Sokil-Setup.exe            # майстер: Вітання → Шлях → Готово
 Sokil-Setup.exe --install  # тиха установка
 Sokil-Setup.exe --uninstall
 ```
-Встановлює мову у `%LOCALAPPDATA%\Sokil`. У вікні є галочка **«Патчити PATH»** — додає мову до PATH у реєстрі (як Python installer), і список **«Версія (з GitHub)»** — можна вибрати, яку версію завантажити з репозиторію (офлайн-вбудована, latest або конкретний тег v2.x).
+
+- Встановлює **обидва** файли у `%LOCALAPPDATA%\Sokil`: мову + IDE автоматично
+- Галочка **«Патчити PATH»** — запуск мови з будь-якого терміналу
+- **«Версія»** — вбудована (офлайн), latest або конкретний тег з GitHub
+- Ставить асоціацію `.sokil` — подвійний клік по файлу запускає програму через `cmd /k`
 
 **Linux / macOS**:
 ```bash
 sudo ./install.sh          # збирає і ставить у /usr/local/bin
 ```
 
-## Запуск
+### Запуск
 
 ```bash
-./sokil                 # REPL
-./sokil файл.sokil      # виконати програму
-./sokil -e "код"        # виконати рядок коду
-./sokil --update        # самооновлення з GitHub (Windows)
-./sokil --version       # версія
+./sokil                  # REPL
+./sokil файл.sokil       # виконати програму
+./sokil -e "print(1)"    # виконати рядок
+./sokil --compile app.sokil   # app.exe без C-компілятора!
+./sokil --update         # самооновлення з GitHub
+./sokil --version        # версія
 ```
 
-## Синтаксис мови
+### Приклад коду
 
-### Змінні
 ```
-let x = 42
-let name = "Сокіл"
-let pi = 3.14
-let flag = true
-let nothing = nil
-```
-
-### Вивід та введення
-```
-print("Привіт!")
-print(x)
-let name = input("Як тебе звати? ")
-print("Привіт, " + name + "!")
-```
-
-### Цикли: while, for, break, continue
-```
-let i = 0
-while i < 10 {
-    print(i)
-    i = i + 1
-}
-
-for i = 0; i < 10; i = i + 1 {
-    if i == 5 {
-        continue
-    }
-    if i == 8 {
-        break
-    }
-    print(i)
-}
-```
-
-### Умови
-```
-if x > 10 {
-    print("більше")
-} elif x == 10 {
-    print("рівно")
-} else {
-    print("менше")
-}
-```
-
-### Функції та рекурсія
-```
+// класична програма
 fn fib(n) {
-    if n <= 1 {
-        return n
-    }
+    if n <= 1 { return n }
     return fib(n - 1) + fib(n - 2)
 }
-print(fib(10))
+
+let name = input('Як тебе звати? ')
+print('Привіт, ' + name + '!')
+print('Фібоначчі(10) = ' + fib(10))
+
+// сучасні фічі
+let arr = [9, 2, 7, 1]
+sort(arr)                 // сортування на місці
+print(arr)                // [1, 2, 7, 9]
+print('Сокіл' * 2)        // СокілСокіл
+print(now())              // Unix-час у секундах
+print('тест ' + 42)       // рядок + число = конкатенація
 ```
 
-### Масиви
+### Синтаксис
+
+- Змінні: `let x = 42`, `let s = "рядок"` або `'рядок'`
+- Рядки: подвійні `"..."` **та одинарні** `'...'` лапки
+- Умови: `if / elif / else`
+- Цикли: `while умова { }`, `for i = 0; i < n; i = i + 1 { }`, `break`, `continue`
+- Функції: `fn name(арг) { return ... }` + замикання
+- Масиви: `[1,2,3]`, `push`, `pop`, `join`, `split`, індекси
+- Вбудовані: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random`
+- Оператори: `+ - * / % == != < > <= >= and or not`
+- Коментарі: `// рядок` та `/* блок */`
+- Скорочення: `i++`, `i--`; опційний розділювач `;`
+
+Приклади — у папці `examples/`.
+
+---
+
+## 🇬🇧 English
+
+A simple but real programming language: zero dependencies, one pure-C (C99) file, native binaries, plus its own installer and IDE — everything written from scratch.
+
+**Zero dependencies. 100% our own code.**
+
+### Features
+
+- ✅ Lexer → parser → interpreter (tree-walking) in pure C — **no Python, no C compiler needed**
+- ✅ `sokil --compile file.sokil` → **ready .exe** (own compilation, no C involved)
+- ✅ `SokilIDE.exe` — **own IDE** with syntax highlighting and run button (installed automatically)
+- ✅ Windows / Linux / macOS
+- ✅ `sokil --update` — self-update from GitHub
+- ✅ Double-click `.sokil` to run (association set by installer)
+- ✅ Own wizard installer with animated code background
+
+### Install (Windows)
+
+**Our own installer** (written in C, embeds both `sokil.exe` and `SokilIDE.exe`):
+
 ```
-let arr = [1, 2, 3, 4, 5]
-print(arr[0])       // 1
-print(len(arr))     // 5
-arr[0] = 99         // [99, 2, 3, 4, 5]
-arr = push(arr, 6)  // [99, 2, 3, 4, 5, 6]
-arr = pop(arr)      // [99, 2, 3, 4, 5]
-print(range(5))     // [0, 1, 2, 3, 4]
-print(range(2, 6))  // [2, 3, 4, 5]
+Sokil-Setup.exe            # wizard: Welcome → Path → Done
+Sokil-Setup.exe --install  # silent install
+Sokil-Setup.exe --uninstall
 ```
 
-### Рядки
+- Installs **both** files to `%LOCALAPPDATA%\Sokil`: the language + the IDE automatically
+- **"Patch PATH"** checkbox — run the language from any terminal
+- **"Version"** dropdown — embedded (offline), latest, or a specific GitHub tag
+- Sets the `.sokil` association — double-clicking a file runs the program via `cmd /k`
+
+**Linux / macOS**:
+```bash
+sudo ./install.sh          # builds and installs to /usr/local/bin
 ```
-let words = split("яблуко,груша,слива", ",")
-print(words)                        // [яблуко, груша, слива]
-print(join(words, " - "))           // яблуко - груша - слива
-print("рядок"[0])                   // р
-print(len("Сокіл"))                 // 5
+
+### Usage
+
+```bash
+./sokil                  # REPL
+./sokil file.sokil       # run a program
+./sokil -e "print(1)"    # run one line
+./sokil --compile app.sokil   # app.exe WITHOUT a C compiler!
+./sokil --update         # self-update from GitHub
+./sokil --version        # version
 ```
 
-## Вбудовані функції
+### Code example
 
-| Функція          | Опис                                  |
-|------------------|---------------------------------------|
-| `print(...)`     | Вивід на екран                        |
-| `input(промпт)`  | Зчитування з клавіатури               |
-| `len(x)`         | Довжина рядка/масиву                  |
-| `type(x)`        | Тип змінної                           |
-| `str(x)`         | Перетворення на рядок                 |
-| `num(x)`         | Перетворення на число                 |
-| `abs(x)`         | Модуль числа                          |
-| `min(a,b)`       | Менше з двох                          |
-| `max(a,b)`       | Більше з двох                         |
-| `floor(x)`       | Округлення вниз                       |
-| `ceil(x)`        | Округлення вгору                      |
-| `round(x)`       | Округлення                            |
-| `sqrt(x)`        | Квадратний корінь                     |
-| `pow(a,b)`       | a у степені b                         |
-| `range(a[,b])`   | Масив чисел [a..b)                    |
-| `push(arr,v)`    | Новий масив з доданим значенням       |
-| `pop(arr)`       | Новий масив без останнього елемента   |
-| `join(arr,sep)`  | З'єднати масив у рядок                |
-| `split(str,sep)` | Розбити рядок на масив                |
-| `exit([код])`    | Завершити програму                    |
-| `sleep(мс)`      | Пауза в мілісекундах                  |
-| `contains(р,під)` | Чи містить рядок підрядок            |
+```
+// classic program
+fn fib(n) {
+    if n <= 1 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
 
-Скорочення: `i++` = `i = i + 1`, `i--` = `i = i - 1`.
+let name = input('What is your name? ')
+print('Hello, ' + name + '!')
+print('fib(10) = ' + fib(10))
 
-Коментарі: `// рядок` та `/* блок */`. Логічні операції: `and`, `or`, `not` (або `!`).
-Оператори: `+ - * / % == != < > <= >=`. Опційний розділювач: `;`.
+// modern features
+let arr = [9, 2, 7, 1]
+sort(arr)                 // in-place sort
+print(arr)                // [1, 2, 7, 9]
+print('Sokil' * 2)        // SokilSokil
+print(now())              // Unix time in seconds
+print('test ' + 42)       // string + number = concatenation
+```
 
-## Приклади
+### Syntax
 
-Папка `examples/`:
-- `hello.sokil` — привіт, світ
-- `fibonacci.sokil` — числа Фібоначчі
-- `factorial.sokil` — факторіал
-- `arrays.sokil` — робота з масивами
-- `sorting.sokil` — сортування
-- `recursion.sokil` — рекурсія та замикання
-- `guessing.sokil` — гра «Вгадай число»
+- Variables: `let x = 42`, `let s = "string"` or `'string'`
+- Strings: double `"..."` **and single** `'...'` quotes
+- Conditions: `if / elif / else`
+- Loops: `while cond { }`, `for i = 0; i < n; i = i + 1 { }`, `break`, `continue`
+- Functions: `fn name(args) { return ... }` + closures
+- Arrays: `[1,2,3]`, `push`, `pop`, `join`, `split`, indexing
+- Built-ins: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random`
+- Operators: `+ - * / % == != < > <= >= and or not`
+- Comments: `// line` and `/* block */`
+- Shorthand: `i++`, `i--`; optional `;` separator
 
-## Архітектура
+Examples in `examples/`.
 
-- `sokil.c` — лексер → парсер → інтерпретатор (tree-walking), арена-алокатор
-- `installer.c` + `sokil_exe.h` — власний інсталятор Windows з вбудованим бінарником
-- `setup.iss` — альтернатива: Inno Setup інсталятор
+---
 
-## Ліцензія
+## Build
+
+```bash
+# Linux / macOS
+cc -O2 -std=c99 -lm -o sokil sokil.c
+
+# Windows (MinGW)
+gcc -O2 -std=c99 -lm -o sokil.exe sokil.c -lurlmon
+```
+
+Prebuilt binaries: [Releases](https://github.com/DenisVJR1/sokil-lang/releases).
+
+## Architecture
+
+- `sokil.c` — lexer → parser → interpreter (tree-walking), arena allocator
+- `installer.c` + `sokil_exe.h` + `sokil_ide.h` — own Windows wizard installer with embedded language + IDE
+- `ide.c` — own IDE (RichEdit + syntax highlighting, built-in run button)
+
+## License
 
 MIT

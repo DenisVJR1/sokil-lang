@@ -1,10 +1,10 @@
 /*
- * Сокіл — інсталятор-майстер (wizard) у стилі Inno Setup, дизайн Material 3.
+ * Сокіл — інсталятор-майстер (wizard), дизайн Material 3.
  * 100% власний код на C (Win32 API), без залежностей.
  *
- * v2.5: сторінки майстра (Вітання → Шлях → Готово), анімований фон з кодом,
- *       вибір версії з GitHub, асоціація .sokil через cmd /k (подвійний клік),
- *       фон Material 3 замість системного.
+ * v2.6: wizard (Вітання → Шлях → Готово), анімований фон з кодом,
+ *       встановлює sokil.exe + SokilIDE.exe автоматично,
+ *       асоціація .sokil через cmd /k, вибір версії з GitHub.
  */
 #include <windows.h>
 #include <dwmapi.h>
@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "sokil_exe.h"
+#include "sokil_ide.h"
 
 #define BTN_NEXT    1001
 #define BTN_BACK    1002
@@ -24,23 +25,27 @@
 #define BTN_UNINST  1006
 #define BTN_BROWSE  1007
 
-#define M3_PRIMARY      0x00A45067   /* 6750A4 */
-#define M3_PRIMARY_DARK 0x0058358B
-#define M3_SURFACE      0x00F7FEFE
-#define M3_CARD         0x00EDF7F3
-#define M3_TONAL        0x00FFDDEA
-#define M3_TONAL_TXT    0x004C2100
+/* ── Material 3 кольори ── */
+#define M3_PRIMARY      0x006750A4
+#define M3_PRIMARY_LT   0x00EADDFF
+#define M3_PRIMARY_DARK 0x00381E72
+#define M3_SURFACE      0x00FFFBFE
+#define M3_CARD         0x00F7F2FA
+#define M3_TONAL        0x00E8DEF8
+#define M3_TONAL_TXT    0x004A4458
 #define M3_ON_SURFACE   0x001D1B20
-#define M3_MUTED        0x00797875
-#define M3_OUTLINE      0x00797875
+#define M3_MUTED        0x0079747E
+#define M3_OUTLINE      0x00CAC4D0
+#define M3_GREEN        0x00386A20
 
 static wchar_t APP_DIR[MAX_PATH];
 static HWND hMain, hChkPath, hCombo, hPath;
-static HFONT fTitle, fBody, fSmall, fMono;
+static HFONT fTitle, fSubtitle, fBody, fSmall, fMono, fIcon;
 static HBRUSH hbrCard, hbrSurface;
 static wchar_t statusTxt[512];
 static int g_page = 0;
 static int g_anim = 0;
+static wchar_t CUR_VER[] = L"2.6";
 
 #define MAX_VER 16
 static wchar_t ver_urls[MAX_VER][768];
@@ -49,47 +54,41 @@ static int ver_count = 0;
 #define RELS_URL L"https://api.github.com/repos/DenisVJR1/sokil-lang/releases?per_page=12"
 #define LATEST   L"https://github.com/DenisVJR1/sokil-lang/releases/latest/download/sokil.exe"
 
-/* ── Фоновий «білий код» — рядки прокручуються ліворуч ── */
+/* ── Анімований фон-код ── */
 static const wchar_t *BG_CODE[] = {
-    L"print('Сокіл')", L"let a = [1,2,3]; sort(a)", L"fn hello()",
-    L"for i in range(5) { print(i) }", L"sokil --compile app.sokil",
-    L"x = 42", L"random(1, 100)", L"print('привіт, світе!')",
-    L"while x > 0 { x = x - 1 }", L"contains('sokil','ok')",
-    L"input('як тебе звати?')", L"sleep(250)", L"join(['a','b'], '-')",
+    L"print('Сокіл')",
+    L"let a = [1,2,3]; sort(a)",
+    L"fn hello(name) {",
+    L"  return 'Привіт, ' + name",
+    L"}",
+    L"for i in range(5) { print(i) }",
+    L"sokil --compile app.sokil",
+    L"let x = 42",
+    L"random(1, 100)",
+    L"input('як тебе звати? ')",
+    L"while x > 0 { x = x - 1 }",
+    L"print(len('Сокіл'))",
+    L"let arr = push([1,2], 3)",
+    L"print('hi' * 5)",
+    L"print(now() > 1000000000)",
 };
 #define BG_N (int)(sizeof BG_CODE / sizeof BG_CODE[0])
 
-/* ── PATH у HKCU\Environment ── */
-static int path_has(void) {
-    DWORD sz = 32767;
-    wchar_t *old = (wchar_t *)malloc(sz * sizeof(wchar_t));
-    if (!old) return 0;
-    LONG r = RegGetValueW(HKEY_CURRENT_USER, L"Environment", L"Path",
-                          RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, NULL, old, &sz);
-    if (r != ERROR_SUCCESS) sz = 0;
-    wchar_t *hay = (sz > 0) ? old : L"";
-    int hit = (wcsstr(hay, APP_DIR) != NULL);
-    free(old);
-    return hit;
-}
+/* ── PATH ── */
 static void path_add(void) {
     DWORD sz = 32767;
     wchar_t *old = (wchar_t *)malloc(sz * sizeof(wchar_t));
     if (!old) return;
     LONG r = RegGetValueW(HKEY_CURRENT_USER, L"Environment", L"Path",
                           RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, NULL, old, &sz);
-    if (r != ERROR_SUCCESS) { wcscpy(old, L"%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps"); sz = wcslen(old) * sizeof(wchar_t); }
-    if (wcsstr(old, APP_DIR) != NULL) goto done;
-    {
-        size_t n = wcslen(old) + wcslen(APP_DIR) + 2;
-        wchar_t *nw = (wchar_t *)malloc(n * sizeof(wchar_t));
-        if (!nw) goto done;
-        wsprintfW(nw, L"%s;%s", old, APP_DIR);
-        RegSetKeyValueW(HKEY_CURRENT_USER, L"Environment", L"Path", REG_EXPAND_SZ, nw, (DWORD)((wcslen(nw)+1)*sizeof(wchar_t)));
-        free(nw);
-    }
-done:
-    free(old);
+    if (r != ERROR_SUCCESS) { wcscpy(old, L"%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps"); }
+    if (wcsstr(old, APP_DIR) != NULL) { free(old); return; }
+    size_t n = wcslen(old) + wcslen(APP_DIR) + 2;
+    wchar_t *nw = (wchar_t *)malloc(n * sizeof(wchar_t));
+    if (!nw) { free(old); return; }
+    wsprintfW(nw, L"%s;%s", old, APP_DIR);
+    RegSetKeyValueW(HKEY_CURRENT_USER, L"Environment", L"Path", REG_EXPAND_SZ, nw, (DWORD)((wcslen(nw)+1)*sizeof(wchar_t)));
+    free(nw); free(old);
 }
 static void path_remove(void) {
     DWORD sz = 32767;
@@ -101,8 +100,10 @@ static void path_remove(void) {
     wchar_t *hit = wcsstr(old, APP_DIR);
     if (hit) {
         wchar_t *sep = hit - 1;
-        if (sep >= old && *sep == L';') { memmove(sep, hit + wcslen(APP_DIR), (wcslen(hit + wcslen(APP_DIR)) + 1) * sizeof(wchar_t)); }
-        else { memmove(hit, hit + wcslen(APP_DIR), (wcslen(hit + wcslen(APP_DIR)) + 1) * sizeof(wchar_t)); }
+        if (sep >= old && *sep == L';')
+            memmove(sep, hit + wcslen(APP_DIR), (wcslen(hit + wcslen(APP_DIR)) + 1) * sizeof(wchar_t));
+        else
+            memmove(hit, hit + wcslen(APP_DIR), (wcslen(hit + wcslen(APP_DIR)) + 1) * sizeof(wchar_t));
         RegSetKeyValueW(HKEY_CURRENT_USER, L"Environment", L"Path", REG_EXPAND_SZ, old, (DWORD)((wcslen(old)+1)*sizeof(wchar_t)));
     }
     free(old);
@@ -112,12 +113,12 @@ static void notify_env(void) {
                         SMTO_ABORTIFHUNG, 4000, NULL);
 }
 
-/* ── Асоціація .sokil: подвійний клік → запуск через cmd /k ── */
+/* ── Асоціація .sokil → cmd /k ── */
 static void assoc_add(const wchar_t *exe) {
     wchar_t cmd[1024];
     wsprintfW(cmd, L"cmd.exe /k \"\"%s\" \"%%1\"\"", exe);
-    RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\Classes\\.sokil\\DefaultIcon", NULL, REG_SZ, exe, (DWORD)((wcslen(exe)+1)*sizeof(wchar_t)));
     RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\Classes\\.sokil", NULL, REG_SZ, L"SokilScript", 12 * sizeof(wchar_t));
+    RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\Classes\\.sokil\\DefaultIcon", NULL, REG_SZ, exe, (DWORD)((wcslen(exe)+1)*sizeof(wchar_t)));
     RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\Classes\\SokilScript\\shell\\open\\command", NULL, REG_SZ, cmd, (DWORD)((wcslen(cmd)+1)*sizeof(wchar_t)));
     RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\Classes\\SokilScript\\DefaultIcon", NULL, REG_SZ, exe, (DWORD)((wcslen(exe)+1)*sizeof(wchar_t)));
 }
@@ -126,16 +127,14 @@ static void assoc_del(void) {
     RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Classes\\SokilScript");
 }
 
-/* ── Install / Update / Uninstall ── */
-static BOOL write_embedded(void) {
-    wchar_t exe[MAX_PATH];
-    wsprintfW(exe, L"%s\\sokil.exe", APP_DIR);
-    HANDLE h = CreateFileW(exe, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+/* ── Встановлення / Видалення ── */
+static BOOL write_bytes(const wchar_t *path, const unsigned char *data, unsigned int len) {
+    HANDLE h = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) return FALSE;
     DWORD w = 0;
-    WriteFile(h, sokil_exe_data, sokil_exe_len, &w, NULL);
+    WriteFile(h, data, len, &w, NULL);
     CloseHandle(h);
-    return w == sokil_exe_len;
+    return w == len;
 }
 static BOOL download_to(const wchar_t *url, const wchar_t *dest) {
     wchar_t tmp[MAX_PATH];
@@ -154,15 +153,25 @@ static BOOL download_to(const wchar_t *url, const wchar_t *dest) {
 }
 static BOOL do_install(int patch, int version) {
     if (!CreateDirectoryW(APP_DIR, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FALSE;
-    wchar_t exe[MAX_PATH];
+
+    /* sokil.exe */
+    wchar_t exe[MAX_PATH], ide[MAX_PATH];
     wsprintfW(exe, L"%s\\sokil.exe", APP_DIR);
+    wsprintfW(ide, L"%s\\SokilIDE.exe", APP_DIR);
+
     BOOL ok;
-    if (version == 0) ok = write_embedded();
-    else if (version == 1) ok = download_to(LATEST, exe);
-    else if (version - 2 < ver_count && ver_urls[version - 2][64])
+    if (version == 0) {
+        ok = write_bytes(exe, sokil_exe_data, sokil_exe_len);
+    } else if (version == 1) {
+        ok = download_to(LATEST, exe);
+    } else if (version - 2 < ver_count && ver_urls[version - 2][64]) {
         ok = download_to(ver_urls[version - 2] + 64, exe);
-    else return FALSE;
+    } else return FALSE;
     if (!ok) return FALSE;
+
+    /* SokilIDE.exe — завжди з вбудованого */
+    write_bytes(ide, sokil_ide_data, sokil_ide_len);
+
     if (patch) path_add();
     assoc_add(exe);
     return TRUE;
@@ -171,19 +180,20 @@ static BOOL do_uninstall(void) {
     assoc_del();
     path_remove();
     notify_env();
-    wchar_t exe[MAX_PATH];
+    wchar_t exe[MAX_PATH], ide[MAX_PATH];
     wsprintfW(exe, L"%s\\sokil.exe", APP_DIR);
+    wsprintfW(ide, L"%s\\SokilIDE.exe", APP_DIR);
     DeleteFileW(exe);
+    DeleteFileW(ide);
     RemoveDirectoryW(APP_DIR);
     return TRUE;
 }
 
-/* ── Спільне малювання ── */
-static void b_round_fill(HDC hdc, RECT *rc, COLORREF col, int r) {
+/* ── Малювання ── */
+static void round_fill(HDC hdc, RECT *rc, COLORREF col, int r) {
     HBRUSH br = CreateSolidBrush(col);
     HRGN rg = CreateRoundRectRgn(rc->left, rc->top, rc->right + 1, rc->bottom + 1, r * 2, r * 2);
     FillRgn(hdc, rg, br);
-    FrameRgn(hdc, rg, br, 1, 1);
     DeleteObject(rg);
     DeleteObject(br);
 }
@@ -192,7 +202,7 @@ static void set_status(const wchar_t *txt) {
     if (hMain) InvalidateRect(hMain, NULL, TRUE);
 }
 
-/* ── Завантаження списку версій з GitHub API ── */
+/* ── GitHub API ── */
 static void fetch_versions(void) {
     wchar_t tmp[MAX_PATH];
     GetTempPathW(MAX_PATH, tmp);
@@ -201,14 +211,11 @@ static void fetch_versions(void) {
     FILE *f = _wfopen(tmp, L"rb");
     DeleteFileW(tmp);
     if (!f) return;
-    long sz;
-    fseek(f, 0, SEEK_END); sz = ftell(f); fseek(f, 0, SEEK_SET);
+    long sz; fseek(f, 0, SEEK_END); sz = ftell(f); fseek(f, 0, SEEK_SET);
     if (sz <= 0 || sz > 1 << 20) { fclose(f); return; }
     char *js = (char *)malloc((size_t)sz + 1);
     if (!js) { fclose(f); return; }
-    fread(js, 1, (size_t)sz, f);
-    js[sz] = '\0';
-    fclose(f);
+    fread(js, 1, (size_t)sz, f); js[sz] = '\0'; fclose(f);
     ver_count = 0;
     const char *p = js;
     while (ver_count < MAX_VER) {
@@ -229,14 +236,13 @@ static void fetch_versions(void) {
             if (du && du < wstop) {
                 const char *du_end = strchr(du + 24, '"');
                 if (du_end) {
-                    int taglen = (int)(tag_end - tag);
-                    int ulen = (int)(du_end - (du + 24));
-                    if (taglen > 0 && taglen < 64 && ulen > 0 && ulen < 700) {
-                        char tmpt[64], tmpu[700];
-                        memcpy(tmpt, tag, taglen); tmpt[taglen] = 0;
-                        memcpy(tmpu, du + 24, ulen); tmpu[ulen] = 0;
-                        MultiByteToWideChar(CP_UTF8, 0, tmpt, -1, ver_urls[ver_count], 64);
-                        MultiByteToWideChar(CP_UTF8, 0, tmpu, -1, ver_urls[ver_count] + 64, 700);
+                    int tl = (int)(tag_end - tag), ul = (int)(du_end - (du + 24));
+                    if (tl > 0 && tl < 64 && ul > 0 && ul < 700) {
+                        char t[64], u[700];
+                        memcpy(t, tag, tl); t[tl] = 0;
+                        memcpy(u, du + 24, ul); u[ul] = 0;
+                        MultiByteToWideChar(CP_UTF8, 0, t, -1, ver_urls[ver_count], 64);
+                        MultiByteToWideChar(CP_UTF8, 0, u, -1, ver_urls[ver_count] + 64, 700);
                         ver_count++;
                     }
                 }
@@ -253,9 +259,8 @@ static void fetch_versions(void) {
 static void set_page(int page) {
     g_page = page;
     HWND ctrls[] = { hPath, hChkPath, hCombo };
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 3; i++)
         if (ctrls[i]) ShowWindow(ctrls[i], (page == 1) ? SW_SHOW : SW_HIDE);
-    }
     static const int ids[] = { BTN_NEXT, BTN_BACK, BTN_CLOSE, BTN_INSTALL, BTN_UPDATE, BTN_UNINST, BTN_BROWSE };
     for (int i = 0; i < 7; i++) {
         HWND b = GetDlgItem(hMain, ids[i]);
@@ -294,40 +299,47 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_CREATE: {
         hMain = hw;
-        fTitle = CreateFontW(26, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
-        fBody  = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
-        fSmall = CreateFontW(9, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
-        fMono  = CreateFontW(14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Consolas");
-        hbrCard = CreateSolidBrush(M3_CARD);
+        fTitle    = CreateFontW(32, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI Variable Display");
+        fSubtitle = CreateFontW(14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
+        fBody     = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
+        fSmall    = CreateFontW(10, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
+        fMono     = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Consolas");
+        fIcon     = CreateFontW(42, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI Variable Display");
+        hbrCard    = CreateSolidBrush(M3_CARD);
         hbrSurface = CreateSolidBrush(M3_SURFACE);
 
-        CreateWindowW(L"STATIC", L"Каталог встановлення:", WS_CHILD, 38, 98, 340, 20, hw, NULL, NULL, NULL);
-        hPath = CreateWindowW(L"EDIT", APP_DIR, WS_CHILD|WS_BORDER|ES_AUTOHSCROLL, 38, 120, 322, 26, hw, NULL, NULL, NULL);
+        /* Сторінка 1: шлях + версія */
+        CreateWindowW(L"STATIC", L"Каталог встановлення:", WS_CHILD|WS_VISIBLE, 44, 108, 340, 20, hw, NULL, NULL, NULL);
+        hPath = CreateWindowW(L"EDIT", APP_DIR, WS_CHILD|WS_VISIBLE|WS_BORDER|ES_AUTOHSCROLL, 44, 130, 310, 28, hw, NULL, NULL, NULL);
         SendMessageW(hPath, WM_SETFONT, (WPARAM)fBody, TRUE);
-        CreateWindowW(L"BUTTON", L"Огляд...", WS_CHILD|BS_PUSHBUTTON, 368, 120, 82, 26, hw, (HMENU)BTN_BROWSE, NULL, NULL);
-        hChkPath = CreateWindowW(L"BUTTON", L"Патчити PATH (запуск з будь-якого терміналу)",
-            WS_CHILD|BS_AUTOCHECKBOX|WS_TABSTOP, 38, 160, 380, 24, hw, NULL, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"Огляд...", WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON, 362, 130, 78, 28, hw, (HMENU)BTN_BROWSE, NULL, NULL);
+
+        hChkPath = CreateWindowW(L"BUTTON", L"Патчити PATH — запуск з будь-якого терміналу",
+            WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX|WS_TABSTOP, 44, 170, 380, 24, hw, NULL, NULL, NULL);
         SendMessageW(hChkPath, WM_SETFONT, (WPARAM)fBody, TRUE);
         SendMessageW(hChkPath, BM_SETCHECK, BST_CHECKED, 0);
-        CreateWindowW(L"STATIC", L"Версія (з GitHub):", WS_CHILD, 38, 192, 340, 18, hw, NULL, NULL, NULL);
-        hCombo = CreateWindowW(L"COMBOBOX", NULL, WS_CHILD|WS_VSCROLL|CBS_DROPDOWNLIST, 38, 212, 330, 220, hw, NULL, NULL, NULL);
+
+        CreateWindowW(L"STATIC", L"Версія:", WS_CHILD|WS_VISIBLE, 44, 200, 340, 18, hw, NULL, NULL, NULL);
+        hCombo = CreateWindowW(L"COMBOBOX", NULL, WS_CHILD|WS_VISIBLE|WS_VSCROLL|CBS_DROPDOWNLIST, 44, 222, 330, 220, hw, NULL, NULL, NULL);
         SendMessageW(hCombo, WM_SETFONT, (WPARAM)fBody, TRUE);
-        SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)L"Вбудована версія (офлайн)");
-        SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)L"Остання версія з GitHub (latest)");
+        SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)L"Вбудована (офлайн)");
+        SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)L"Остання з GitHub");
         fetch_versions();
         for (int i = 0; i < ver_count; i++)
             SendMessageW(hCombo, CB_ADDSTRING, 0, (LPARAM)ver_urls[i]);
         SendMessageW(hCombo, CB_SETCURSEL, 2, 0);
 
-        CreateWindowW(L"BUTTON", L"Далі →",   WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 24, 330, 128, 44, hw, (HMENU)BTN_NEXT, NULL, NULL);
-        CreateWindowW(L"BUTTON", L"← Назад",  WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 24, 330, 128, 44, hw, (HMENU)BTN_BACK, NULL, NULL);
-        CreateWindowW(L"BUTTON", L"Закрити",  WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 160, 330, 128, 44, hw, (HMENU)BTN_CLOSE, NULL, NULL);
-        CreateWindowW(L"BUTTON", L"Встановити", WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 160, 330, 128, 44, hw, (HMENU)BTN_INSTALL, NULL, NULL);
-        CreateWindowW(L"BUTTON", L"Оновити",  WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 24, 330, 128, 44, hw, (HMENU)BTN_UPDATE, NULL, NULL);
-        CreateWindowW(L"BUTTON", L"Видалити", WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 296, 330, 120, 44, hw, (HMENU)BTN_UNINST, NULL, NULL);
+        /* Кнопки (owner-draw, rounded M3) */
+        CreateWindowW(L"BUTTON", L"Далі →",    WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 24, 350, 136, 44, hw, (HMENU)BTN_NEXT, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"← Назад",   WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 24, 350, 136, 44, hw, (HMENU)BTN_BACK, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"Закрити",   WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 168, 350, 136, 44, hw, (HMENU)BTN_CLOSE, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"Встановити", WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 168, 350, 148, 44, hw, (HMENU)BTN_INSTALL, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"Оновити",   WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 24, 350, 136, 44, hw, (HMENU)BTN_UPDATE, NULL, NULL);
+        CreateWindowW(L"BUTTON", L"Видалити",  WS_CHILD|BS_OWNERDRAW|WS_TABSTOP, 326, 350, 120, 44, hw, (HMENU)BTN_UNINST, NULL, NULL);
 
         SetTimer(hw, 1, 130, NULL);
 
+        /* Dark title bar */
         HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
         if (dwm) {
             DWORD pref = 2;
@@ -352,52 +364,79 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         GetClientRect(hw, &rc);
         FillRect(hdc, &rc, hbrSurface);
 
-        /* анімований фон-код */
+        /* анімований фон-код (туманний) */
         SelectObject(hdc, fMono);
-        SetTextColor(hdc, 0x00F3EAFB);
+        SetTextColor(hdc, 0x00D8D0E8);
         for (int i = 0; i < BG_N; i++) {
-            int speed = 16 + (i % 3) * 9;
-            int x = 300 - (g_anim * speed) % 640;
-            int y = 78 + i * 20;
-            if (x > -140 && x < 486) {
-                RECT lr = {x, y, x + 300, y + 18};
+            int speed = 14 + (i % 3) * 7;
+            int x = 340 - (g_anim * speed) % 680;
+            int y = 90 + i * 18;
+            if (x > -160 && x < 486) {
+                RECT lr = {x, y, x + 300, y + 16};
                 DrawTextW(hdc, BG_CODE[i], -1, &lr, DT_LEFT|DT_SINGLELINE);
             }
         }
 
-        HGDIOBJ old = SelectObject(hdc, fTitle);
+        /* ── Заголовок ── */
+        HGDIOBJ old = SelectObject(hdc, fIcon);
         SetTextColor(hdc, M3_PRIMARY);
-        rc = (RECT){24, 16, 400, 50};
+        rc = (RECT){24, 12, 460, 56};
         DrawTextW(hdc, L"Сокіл", -1, &rc, DT_LEFT|DT_SINGLELINE);
-        SelectObject(hdc, fBody);
+        SelectObject(hdc, fSubtitle);
         SetTextColor(hdc, M3_MUTED);
-        rc = (RECT){24, 50, 440, 70};
-        DrawTextW(hdc, L"Мова програмування · Інсталятор v2.5", -1, &rc, DT_LEFT|DT_SINGLELINE);
+        rc = (RECT){24, 54, 460, 72};
+        wchar_t sub[128];
+        wsprintfW(sub, L"Мова програмування · Інсталятор v%s", CUR_VER);
+        DrawTextW(hdc, sub, -1, &rc, DT_LEFT|DT_SINGLELINE);
+
+        /* горизонтальна лінія-розділювач */
+        HPEN pen = CreatePen(PS_SOLID, 1, M3_OUTLINE);
+        HPEN oldp = (HPEN)SelectObject(hdc, pen);
+        MoveToEx(hdc, 24, 76, NULL);
+        LineTo(hdc, 456, 76);
+        SelectObject(hdc, oldp);
+        DeleteObject(pen);
 
         if (g_page == 0) {
+            /* вітання */
             SetTextColor(hdc, M3_ON_SURFACE);
-            rc = (RECT){38, 96, 446, 315};
+            SelectObject(hdc, fBody);
+            rc = (RECT){38, 92, 450, 330};
             DrawTextW(hdc,
-                L"Вітаємо! Сокіл — власна мова програмування.\n\n"
-                L"• Пишеш код зрозумілою мовою\n"
-                L"• sokil --compile дає .exe БЕЗ компілятора C\n"
-                L"• Подвійний клік по .sokil запускає програму\n"
-                L"• Галочка PATH — запуск з будь-якого терміналу\n\n"
-                L"Натисни «Далі», щоб обрати каталог і версію.",
+                L"Ласкаво просимо до встановлення Сокола!\n\n"
+                L"Встановлення включає:\n"
+                L"  \x2022  sokil — інтерпретатор мови\n"
+                L"  \x2022  SokilIDE — редактор з підсвіткою\n"
+                L"  \x2022  Асоціація .sokil (подвійний клік = запуск)\n\n"
+                L"sokil --compile \x2192 файл.exe\n"
+                L"  (власна компіляція БЕЗ компілятора C)\n\n"
+                L"Натисніть «Далі», щоб обрати каталог і версію.",
                 -1, &rc, DT_LEFT|DT_WORDBREAK);
         } else if (g_page == 1) {
-            RECT card = {24, 86, 456, 270};
-            b_round_fill(hdc, &card, M3_CARD, 12);
+            /* картка для полів */
+            RECT card = {24, 86, 456, 275};
+            round_fill(hdc, &card, M3_CARD, 12);
         } else {
+            /* готово */
+            SetTextColor(hdc, M3_GREEN);
+            SelectObject(hdc, fIcon);
+            rc = (RECT){38, 88, 450, 130};
+            DrawTextW(hdc, statusTxt[0] && statusTxt[0] == L'\x2713' ? L"\x2713" : L"\x2717", -1, &rc, DT_LEFT|DT_SINGLELINE);
             SetTextColor(hdc, M3_ON_SURFACE);
-            rc = (RECT){38, 96, 446, 320};
+            SelectObject(hdc, fBody);
+            rc = (RECT){38, 140, 450, 340};
             DrawTextW(hdc, statusTxt[0] ? statusTxt : L"Готово", -1, &rc, DT_LEFT|DT_WORDBREAK);
         }
 
+        /* footer */
         SelectObject(hdc, fSmall);
-        SetTextColor(hdc, M3_OUTLINE);
-        rc = (RECT){24, 398, 440, 414};
-        DrawTextW(hdc, L"Сокіл v2.5 · C99 · zero dependencies · MIT", -1, &rc, DT_LEFT|DT_SINGLELINE);
+        SetTextColor(hdc, M3_MUTED);
+        rc = (RECT){24, 402, 460, 420};
+        {
+            wchar_t foot[256];
+            wsprintfW(foot, L"Сокіл v%s \x00B7 C99 \x00B7 zero dependencies \x00B7 MIT \x00B7 github.com/DenisVJR1/sokil-lang", CUR_VER);
+            DrawTextW(hdc, foot, -1, &rc, DT_LEFT|DT_SINGLELINE);
+        }
         SelectObject(hdc, old);
         EndPaint(hw, &ps);
         return 0;
@@ -409,17 +448,14 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         COLORREF bg, fg;
         BOOL down = (di->itemState & ODS_SELECTED) != 0;
         if (di->CtlID == BTN_UNINST || di->CtlID == BTN_BACK) {
-            bg = down ? RGB(0xDC,0xC8,0xE6) : M3_TONAL;
-            fg = M3_TONAL_TXT;
-        } else if (di->CtlID == BTN_UPDATE) {
-            bg = down ? RGB(0xB9,0xA8,0xDA) : M3_TONAL;
+            bg = down ? 0x00D0C0E0 : M3_TONAL;
             fg = M3_TONAL_TXT;
         } else {
             bg = down ? M3_PRIMARY_DARK : M3_PRIMARY;
-            fg = RGB(255,255,255);
+            fg = 0x00FFFFFF;
         }
-        b_round_fill(di->hDC, &rc, bg, 10);
-        HFONT f = CreateFontW(15, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
+        round_fill(di->hDC, &rc, bg, 10);
+        HFONT f = CreateFontW(14, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
         HGDIOBJ o = SelectObject(di->hDC, f);
         SetBkMode(di->hDC, TRANSPARENT);
         SetTextColor(di->hDC, fg);
@@ -453,24 +489,27 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
             BOOL ok = do_install(patch, ver);
             if (ok) {
                 wchar_t msg[1024];
-                wsprintfW(msg, L"✓ Встановлено!\n\nКаталог: %s\n\n"
-                    L"Запуск з терміналу:  sokil файл.sokil\n"
-                    L"Компіляція у .exe:   sokil --compile файл.sokil\n"
-                    L"Оновлення:           sokil --update\n\n"
-                    L"Подвійний клік по .sokil відкриває програму.",
+                wsprintfW(msg,
+                    L"\x2713  Встановлення завершено!\n\n"
+                    L"Каталог:    %s\n"
+                    L"Файли:      sokil.exe + SokilIDE.exe\n\n"
+                    L"Запуск:     sokil файл.sokil\n"
+                    L"Компіляція: sokil --compile файл.sokil\n"
+                    L"Оновлення:  sokil --update\n"
+                    L"Середовище: запустіть SokilIDE.exe",
                     APP_DIR);
                 set_status(msg);
             } else {
-                set_status(L"✗ Помилка встановлення чи завантаження.\nПеревір інтернет або обери вбудовану версію.");
+                set_status(L"\x2717  Помилка встановлення.\nПеревірте інтернет або оберіть вбудовану версію.");
             }
             set_page(2);
             break;
         }
         case BTN_UNINST: {
             if (do_uninstall())
-                set_status(L"✓ Видалено.\n\nСокіл прибрано: файли, PATH, асоціація .sokil.");
+                set_status(L"\x2713  Видалення завершено.\n\nСокіл прибрано повністю: файли, PATH, асоціація.");
             else
-                set_status(L"✗ Помилка видалення.");
+                set_status(L"\x2717  Помилка видалення.");
             set_page(2);
             break;
         }
@@ -478,7 +517,8 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         break;
     case WM_DESTROY:
         KillTimer(hw, 1);
-        DeleteObject(fTitle); DeleteObject(fBody); DeleteObject(fSmall); DeleteObject(fMono);
+        DeleteObject(fTitle); DeleteObject(fSubtitle); DeleteObject(fBody);
+        DeleteObject(fSmall); DeleteObject(fMono); DeleteObject(fIcon);
         if (hbrCard) DeleteObject(hbrCard);
         if (hbrSurface) DeleteObject(hbrSurface);
         PostQuitMessage(0);
@@ -497,7 +537,7 @@ static int gui_main(HINSTANCE hInst) {
     RegisterClassW(&wc);
     HWND hw = CreateWindowExW(0, L"SokilSetup", L"Сокіл — Встановлення",
         WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
-        CW_USEDEFAULT, CW_USEDEFAULT, 486, 440, NULL, NULL, hInst, NULL);
+        CW_USEDEFAULT, CW_USEDEFAULT, 486, 458, NULL, NULL, hInst, NULL);
     if (!hw) return 1;
     ShowWindow(hw, SW_SHOW);
     UpdateWindow(hw);
@@ -525,7 +565,7 @@ int wmain(void) {
         int code;
         if (!wcscmp(argv[1], L"--install"))      code = do_install(1, 0) ? 0 : 1;
         else if (!wcscmp(argv[1], L"--uninstall")) code = do_uninstall() ? 0 : 1;
-        else if (!wcscmp(argv[1], L"--version")) { printf("Sokil Setup v2.5\n"); return 0; }
+        else if (!wcscmp(argv[1], L"--version")) { printf("Sokil Setup v%s\n", "2.6"); return 0; }
         else if (!wcscmp(argv[1], L"--path"))    { printf("%S\n", APP_DIR); return 0; }
         else return 1;
         LocalFree(argv);
