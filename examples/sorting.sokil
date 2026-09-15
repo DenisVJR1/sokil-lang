@@ -1,0 +1,39 @@
+// Сортування — Bubble Sort
+
+fn bubble_sort(arr) {
+    let n = len(arr)
+    let i = 0
+    while i < n {
+        let j = 0
+        while j < n - i - 1 {
+            if arr[j] > arr[j + 1] {
+                // Обмін елементів
+                let temp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return arr
+}
+
+let data = [64, 34, 25, 12, 22, 11, 90]
+print("До сортування: " + str(data))
+print("Після сортування: " + str(bubble_sort(data)))
+
+// Пошук числа в масиві
+fn linear_search(arr, target) {
+    let i = 0
+    while i < len(arr) {
+        if arr[i] == target {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+let idx = linear_search(data, 25)
+print("Індекс числа 25: " + str(idx))

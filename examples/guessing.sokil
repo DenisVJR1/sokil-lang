@@ -1,0 +1,26 @@
+// Гра: Вгадай число
+
+print("=== Гра: Вгадай число ===")
+print("Я загадав число від 1 до 10.")
+print("Спробуй вгадати!")
+print("")
+
+let secret = 7
+let tries = 0
+let found = false
+
+while found == false {
+    let g = num(input("Твоє число: "))
+    tries = tries + 1
+
+    if g == secret {
+        found = true
+        print("Дуже добре! Ти вгадав за " + str(tries) + " спроб!")
+    } else {
+        if g < secret {
+            print("Мало! Спробуй більше.")
+        } else {
+            print("Багато! Спробуй менше.")
+        }
+    }
+}

@@ -1,0 +1,39 @@
+// Рекурсія та замикання
+
+fn make_counter(start) {
+    let count = start
+    fn increment() {
+        count = count + 1
+        return count
+    }
+    return increment
+}
+
+let counter = make_counter(0)
+print(counter())  // 1
+print(counter())  // 2
+print(counter())  // 3
+
+// Піднесення у степінь
+fn power(base, exp) {
+    if exp == 0 {
+        return 1
+    }
+    return base * power(base, exp - 1)
+}
+
+print("2^10 = " + str(power(2, 10)))
+
+// Ханойські башти
+fn hanoi(n, from, to, aux) {
+    if n == 1 {
+        print("Перемістити диск " + str(n) + " з " + from + " на " + to)
+        return
+    }
+    hanoi(n - 1, from, aux, to)
+    print("Перемістити диск " + str(n) + " з " + from + " на " + to)
+    hanoi(n - 1, aux, to, from)
+}
+
+print("Ханойські башти (3 диски):")
+hanoi(3, "A", "C", "B")

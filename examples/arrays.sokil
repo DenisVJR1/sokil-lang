@@ -1,0 +1,33 @@
+// Масиви в Сокіл
+
+let fruits = ["яблуко", "банан", "апельсин", "груша"]
+print("Фрукти: " + str(fruits))
+print("Довжина: " + str(len(fruits)))
+print("Перший: " + fruits[0])
+print("Останній: " + fruits[len(fruits) - 1])
+
+// Знайти найдовше слово
+fn find_longest(arr) {
+    let longest = arr[0]
+    let i = 1
+    while i < len(arr) {
+        if len(arr[i]) > len(longest) {
+            longest = arr[i]
+        }
+        i = i + 1
+    }
+    return longest
+}
+
+print("Найдовше: " + find_longest(fruits))
+
+// Математика з масивами
+let nums = [10, 20, 30, 40, 50]
+let sum = 0
+let i = 0
+while i < len(nums) {
+    sum = sum + nums[i]
+    i = i + 1
+}
+print("Сума: " + str(sum))
+print("Середнє: " + str(sum / len(nums)))

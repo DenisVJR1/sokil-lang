@@ -1,0 +1,70 @@
+# Автоматична збірка для Linux, macOS та Windows
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyinstaller
+      - run: pyinstaller --onefile --name sokil sokil.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sokil-linux
+          path: dist/sokil
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyinstaller
+      - run: pyinstaller --onefile --name sokil sokil.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sokil-mac
+          path: dist/sokil
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyinstaller
+      - run: pyinstaller --onefile --name sokil.exe sokil.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sokil-windows
+          path: dist/sokil.exe
+
+  release:
+    needs: [build-linux, build-mac, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - run: |
+          chmod +x sokil-linux/sokil sokil-mac/sokil
+          zip sokil-linux.zip sokil-linux/sokil
+          zip sokil-mac.zip sokil-mac/sokil
+          7z a sokil-windows.zip sokil-windows/sokil.exe || zip sokil-windows.zip sokil-windows/sokil.exe
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sokil-linux.zip
+            sokil-mac.zip
+            sokil-windows.zip

@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+*.spec
+.eggs/
+*.egg-info/
+sokil.egg-info/
+venv/
+.venv/
+*.exe
+*.app

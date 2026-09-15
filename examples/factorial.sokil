@@ -1,0 +1,16 @@
+// Факторіал числа
+
+fn factorial(n) {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+// Таблиця факторіалів
+print("Таблиця факторіалів:")
+let i = 1
+while i <= 10 {
+    print(str(i) + "! = " + str(factorial(i)))
+    i = i + 1
+}

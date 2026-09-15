@@ -1,0 +1,83 @@
+// Калькулятор
+
+fn calc() {
+    print("=== Калькулятор ===")
+    print("Введи вираз (наприклад: 2 + 3)")
+    print("Операції: + - * / %")
+    print("Введи 'стоп' для виходу")
+    print("")
+
+    while true {
+        let input_str = input("sokil> ")
+        if input_str == "стоп" {
+            print("До побачення!")
+            return
+        }
+
+        // Простий парсер: число операція число
+        let i = 0
+        let num1_str = ""
+        let op = ""
+        let num2_str = ""
+
+        // Знаходимо перше число
+        while i < len(input_str) and input_str[i] != " " {
+            num1_str = num1_str + input_str[i]
+            i = i + 1
+        }
+
+        // Пропускаємо пробіл
+        while i < len(input_str) and input_str[i] == " " {
+            i = i + 1
+        }
+
+        // Знаходимо операцію
+        if i < len(input_str) {
+            op = input_str[i]
+            i = i + 1
+        }
+
+        // Пропускаємо пробіл
+        while i < len(input_str) and input_str[i] == " " {
+            i = i + 1
+        }
+
+        // Знаходимо друге число
+        while i < len(input_str) {
+            num2_str = num2_str + input_str[i]
+            i = i + 1
+        }
+
+        let a = num(num1_str)
+        let b = num(num2_str)
+        let result = 0
+
+        if op == "+" {
+            result = a + b
+        } else {
+            if op == "-" {
+                result = a - b
+            } else {
+                if op == "*" {
+                    result = a * b
+                } else {
+                    if op == "/" {
+                        result = a / b
+                    } else {
+                        if op == "%" {
+                            result = a % b
+                        } else {
+                            print("Невідома операція: " + op)
+                        }
+                    }
+                }
+            }
+        }
+
+        if op != "" and op != " " {
+            print(str(a) + " " + op + " " + str(b) + " = " + str(result))
+        }
+    }
+}
+
+calc()
