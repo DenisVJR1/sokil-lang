@@ -15,6 +15,19 @@ gcc -O2 -std=c99 -o sokil.exe sokil.c
 
 Або готові збірки: [Releases](https://github.com/DenisVJR1/sokil-lang/releases).
 
+## Встановлення
+
+```bash
+# Linux / macOS — встановить у /usr/local/bin
+sudo ./install.sh
+
+# Windows — збере у %LOCALAPPDATA%\Sokil і додасть у PATH
+install.bat
+```
+
+Або справжній Windows-інсталятор з [Releases](https://github.com/DenisVJR1/sokil-lang/releases)
+(зібраний із `setup.iss` через Inno Setup).
+
 ## Запуск
 
 ```bash
