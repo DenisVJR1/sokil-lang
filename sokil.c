@@ -19,6 +19,11 @@
 #include <ctype.h>
 #include <math.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 /* аргументи командного рядка — видимі як args у програмі */
 static char **g_argv;
@@ -100,6 +105,7 @@ enum {
     T_FOR, T_BREAK, T_CONTINUE,
     T_AND, T_OR, T_NOT,
     T_PLUS, T_MINUS, T_STAR, T_SLASH, T_PERCENT,
+    T_PLUSPLUS, T_MINUSMINUS,
     T_EQ, T_EQEQ, T_NEQ, T_LT, T_GT, T_LTE, T_GTE, T_BANG,
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE, T_LBRACKET, T_RBRACKET,
     T_COMMA, T_SEMICOLON,
@@ -111,7 +117,7 @@ typedef struct { int type; double num; char *text; int line; } Token;
 static const char *tok_names[] = {
     "NUM","STR","IDENT","TRUE","FALSE","NIL","LET","IF","ELIF","ELSE",
     "WHILE","FN","RETURN","FOR","BREAK","CONTINUE","AND","OR","NOT",
-    "PLUS","MINUS","STAR","SLASH","PERCENT",
+    "PLUS","MINUS","STAR","SLASH","PERCENT","PLUSPLUS","MINUSMINUS",
     "EQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","LPAREN",
     "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","SEMICOLON","NEWLINE","EOF"
 };
@@ -254,6 +260,8 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
         if (c == '!' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_NEQ, 0, NULL)); continue; }
         if (c == '<' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_LTE, 0, NULL)); continue; }
         if (c == '>' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_GTE, 0, NULL)); continue; }
+        if (c == '+' && lx_peek(&lx, 1) == '+') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_PLUSPLUS, 0, NULL)); continue; }
+        if (c == '-' && lx_peek(&lx, 1) == '-') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_MINUSMINUS, 0, NULL)); continue; }
 
         int t = 0;
         switch (c) {
@@ -612,6 +620,18 @@ static Node *pr_call(Parser *p) {
             n->b = pr_expr(p);
             pr_expect(p, T_RBRACKET);
             e = n;
+        } else if (pr_peek(p).type == T_PLUSPLUS || pr_peek(p).type == T_MINUSMINUS) {
+            int op = pr_peek(p).type;                       /* i++ / i-- */
+            int line = pr_adv(p).line;
+            if (e->kind != N_VAR) pr_err(p, "++/-- лише для змінних");
+            Node *one = new_node(p->a, N_NUM, line);
+            one->num = 1.0;
+            Node *bin = new_node(p->a, N_BINOP, line);
+            bin->str = (char *)(op == T_PLUSPLUS ? "+" : "-");
+            bin->a = e; bin->b = one;
+            Node *as = new_node(p->a, N_ASSIGN, line);
+            as->str = e->str; as->a = bin;
+            e = as;
         } else break;
     }
     return e;
@@ -1304,6 +1324,26 @@ static Value b_exit(Interp *I, Value *a, int n) {
     exit(code);
 }
 
+static Value b_sleep(Interp *I, Value *a, int n) {
+    (void)I;
+    if (n != 1) err_raise(I, "sleep() очікує 1 аргумент — мілісекунди");
+    double ms = need_num(I, a[0]);
+    if (ms < 0) err_raise(I, "sleep(): від'ємний час");
+#ifdef _WIN32
+    Sleep((DWORD)ms);
+#else
+    usleep((useconds_t)(ms * 1000));
+#endif
+    return mk_nil();
+}
+
+static Value b_contains(Interp *I, Value *a, int n) {
+    if (n != 2) err_raise(I, "contains() очікує 2 аргументи (рядок, підрядок)");
+    if (a[0].type != V_STR || a[1].type != V_STR)
+        err_raise(I, "contains(): обидва аргументи — рядки");
+    return mk_bool(strstr(a[0].str, a[1].str) != NULL);
+}
+
 static Value b_random(Interp *I, Value *a, int n) {
     double r = rand() / ((double)RAND_MAX + 1.0);
     if (n == 0) return mk_num(r);
@@ -1344,6 +1384,8 @@ static void install_builtins(Interp *I) {
     Value sp; sp.type = V_NATIVE; sp.native = b_split; sp.fnname = "split"; env_set(g, "split", sp);
     Value ex; ex.type = V_NATIVE; ex.native = b_exit; ex.fnname = "exit"; env_set(g, "exit", ex);
     Value rn; rn.type = V_NATIVE; rn.native = b_random; rn.fnname = "random"; env_set(g, "random", rn);
+    Value sl; sl.type = V_NATIVE; sl.native = b_sleep; sl.fnname = "sleep"; env_set(g, "sleep", sl);
+    Value ct; ct.type = V_NATIVE; ct.native = b_contains; ct.fnname = "contains"; env_set(g, "contains", ct);
     /* args — аргументи командного рядка */
     Value av; av.type = V_ARR;
     av.len = g_argc > g_args_start ? g_argc - g_args_start : 0;
