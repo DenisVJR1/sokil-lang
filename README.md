@@ -23,7 +23,7 @@ Sokil-Setup.exe            # інтерактивне меню
 Sokil-Setup.exe --install  # тиха установка
 Sokil-Setup.exe --uninstall
 ```
-Встановлює мову у `%LOCALAPPDATA%\Sokil`. У вікні є галочка **«Патчити PATH»** — додає мову до PATH у реєстрі (як Python installer).
+Встановлює мову у `%LOCALAPPDATA%\Sokil`. У вікні є галочка **«Патчити PATH»** — додає мову до PATH у реєстрі (як Python installer), і список **«Версія (з GitHub)»** — можна вибрати, яку версію завантажити з репозиторію (офлайн-вбудована, latest або конкретний тег v2.x).
 
 **Linux / macOS**:
 ```bash
