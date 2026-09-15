@@ -1,7 +1,6 @@
 #!/bin/bash
-# Збірка бінарника для Linux
-echo "🦅 Збірка Сокіл для Linux..."
-pip install pyinstaller 2>/dev/null || pip3 install pyinstaller 2>/dev/null
-pyinstaller --onefile --name sokil sokil.py
-echo "✅ Готово: dist/sokil"
-echo "Щоб запустити: ./dist/sokil файл.sokil"
+# Збірка Сокіл для Linux
+mkdir -p dist
+cc -O2 -std=c99 -lm -o dist/sokil sokil.c
+echo "Готово: dist/sokil"
+echo "Запуск: ./dist/sokil файл.sokil"

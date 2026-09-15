@@ -7,26 +7,28 @@
 
 ```bash
 # Linux / macOS
-cc -O2 -std=c99 -o sokil sokil.c
+cc -O2 -std=c99 -lm -o sokil sokil.c
 
 # Windows (MinGW)
-gcc -O2 -std=c99 -o sokil.exe sokil.c
+gcc -O2 -std=c99 -lm -o sokil.exe sokil.c
 ```
 
 Або готові збірки: [Releases](https://github.com/DenisVJR1/sokil-lang/releases).
 
 ## Встановлення
 
-```bash
-# Linux / macOS — встановить у /usr/local/bin
-sudo ./install.sh
-
-# Windows — збере у %LOCALAPPDATA%\Sokil і додасть у PATH
-install.bat
+**Windows** — власний інсталятор (написаний на C, `installer.c`, вбудовує `sokil.exe`):
 ```
+Sokil-Setup.exe            # інтерактивне меню
+Sokil-Setup.exe --install  # тиха установка
+Sokil-Setup.exe --uninstall
+```
+Встановлює мову у `%LOCALAPPDATA%\Sokil` і **прописує PATH** у реєстрі (як Python installer).
 
-Або справжній Windows-інсталятор з [Releases](https://github.com/DenisVJR1/sokil-lang/releases)
-(зібраний із `setup.iss` через Inno Setup).
+**Linux / macOS**:
+```bash
+sudo ./install.sh          # збирає і ставить у /usr/local/bin
+```
 
 ## Запуск
 
@@ -54,24 +56,33 @@ let name = input("Як тебе звати? ")
 print("Привіт, " + name + "!")
 ```
 
-### Математика та порівняння
+### Цикли: while, for, break, continue
 ```
-let result = (2 + 3) * 4
+let i = 0
+while i < 10 {
+    print(i)
+    i = i + 1
+}
+
+for i = 0; i < 10; i = i + 1 {
+    if i == 5 {
+        continue
+    }
+    if i == 8 {
+        break
+    }
+    print(i)
+}
+```
+
+### Умови
+```
 if x > 10 {
     print("більше")
 } elif x == 10 {
     print("рівно")
 } else {
     print("менше")
-}
-```
-
-### Цикли
-```
-let i = 0
-while i < 10 {
-    print(i)
-    i = i + 1
 }
 ```
 
@@ -89,24 +100,51 @@ print(fib(10))
 ### Масиви
 ```
 let arr = [1, 2, 3, 4, 5]
-print(arr[0])      // 1
-print(len(arr))    // 5
-arr[0] = 99        // тепер [99, 2, 3, 4, 5]
+print(arr[0])       // 1
+print(len(arr))     // 5
+arr[0] = 99         // [99, 2, 3, 4, 5]
+arr = push(arr, 6)  // [99, 2, 3, 4, 5, 6]
+arr = pop(arr)      // [99, 2, 3, 4, 5]
+print(range(5))     // [0, 1, 2, 3, 4]
+print(range(2, 6))  // [2, 3, 4, 5]
 ```
 
-### Вбудовані функції
+### Рядки
+```
+let words = split("яблуко,груша,слива", ",")
+print(words)                        // [яблуко, груша, слива]
+print(join(words, " - "))           // яблуко - груша - слива
+print("рядок"[0])                   // р
+print(len("Сокіл"))                 // 5
+```
 
-| Функція    | Опис                           |
-|------------|--------------------------------|
-| `print()`  | Вивід на екран                 |
-| `input()`  | Зчитування з клавіатури        |
-| `len()`    | Довжина рядка/масиву           |
-| `type()`   | Тип змінної                    |
-| `str()`    | Перетворення на рядок          |
-| `num()`    | Перетворення на число          |
+## Вбудовані функції
 
-Коментарі: `// рядок`. Логічні операції: `and`, `or`, `not` (або `!`).
-Оператори: `+ - * / % == != < > <= >=`.
+| Функція          | Опис                                  |
+|------------------|---------------------------------------|
+| `print(...)`     | Вивід на екран                        |
+| `input(промпт)`  | Зчитування з клавіатури               |
+| `len(x)`         | Довжина рядка/масиву                  |
+| `type(x)`        | Тип змінної                           |
+| `str(x)`         | Перетворення на рядок                 |
+| `num(x)`         | Перетворення на число                 |
+| `abs(x)`         | Модуль числа                          |
+| `min(a,b)`       | Менше з двох                          |
+| `max(a,b)`       | Більше з двох                         |
+| `floor(x)`       | Округлення вниз                       |
+| `ceil(x)`        | Округлення вгору                      |
+| `round(x)`       | Округлення                            |
+| `sqrt(x)`        | Квадратний корінь                     |
+| `pow(a,b)`       | a у степені b                         |
+| `range(a[,b])`   | Масив чисел [a..b)                    |
+| `push(arr,v)`    | Новий масив з доданим значенням       |
+| `pop(arr)`       | Новий масив без останнього елемента   |
+| `join(arr,sep)`  | З'єднати масив у рядок                |
+| `split(str,sep)` | Розбити рядок на масив                |
+| `exit([код])`    | Завершити програму                    |
+
+Коментарі: `// рядок` та `/* блок */`. Логічні операції: `and`, `or`, `not` (або `!`).
+Оператори: `+ - * / % == != < > <= >=`. Опційний розділювач: `;`.
 
 ## Приклади
 
@@ -118,6 +156,12 @@ arr[0] = 99        // тепер [99, 2, 3, 4, 5]
 - `sorting.sokil` — сортування
 - `recursion.sokil` — рекурсія та замикання
 - `guessing.sokil` — гра «Вгадай число»
+
+## Архітектура
+
+- `sokil.c` — лексер → парсер → інтерпретатор (tree-walking), арена-алокатор
+- `installer.c` + `sokil_exe.h` — власний інсталятор Windows з вбудованим бінарником
+- `setup.iss` — альтернатива: Inno Setup інсталятор
 
 ## Ліцензія
 

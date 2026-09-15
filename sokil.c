@@ -17,6 +17,7 @@
 #include <stdarg.h>
 #include <setjmp.h>
 #include <ctype.h>
+#include <math.h>
 
 #if defined(__GNUC__) || defined(__clang__)
 #define NORETURN __attribute__((noreturn))
@@ -90,11 +91,12 @@ enum {
     T_NUM, T_STR, T_IDENT,
     T_TRUE, T_FALSE, T_NIL,
     T_LET, T_IF, T_ELIF, T_ELSE, T_WHILE, T_FN, T_RETURN,
+    T_FOR, T_BREAK, T_CONTINUE,
     T_AND, T_OR, T_NOT,
     T_PLUS, T_MINUS, T_STAR, T_SLASH, T_PERCENT,
     T_EQ, T_EQEQ, T_NEQ, T_LT, T_GT, T_LTE, T_GTE, T_BANG,
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE, T_LBRACKET, T_RBRACKET,
-    T_COMMA,
+    T_COMMA, T_SEMICOLON,
     T_NEWLINE, T_EOF
 };
 
@@ -102,9 +104,10 @@ typedef struct { int type; double num; char *text; int line; } Token;
 
 static const char *tok_names[] = {
     "NUM","STR","IDENT","TRUE","FALSE","NIL","LET","IF","ELIF","ELSE",
-    "WHILE","FN","RETURN","AND","OR","NOT","PLUS","MINUS","STAR","SLASH",
-    "PERCENT","EQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","LPAREN",
-    "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","NEWLINE","EOF"
+    "WHILE","FN","RETURN","FOR","BREAK","CONTINUE","AND","OR","NOT",
+    "PLUS","MINUS","STAR","SLASH","PERCENT",
+    "EQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","LPAREN",
+    "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","SEMICOLON","NEWLINE","EOF"
 };
 
 /* ═══════════ Лексер ═══════════ */
@@ -121,6 +124,7 @@ static const struct { const char *kw; int t; } keywords[] = {
     {"true",T_TRUE},{"false",T_FALSE},{"nil",T_NIL},
     {"let",T_LET},{"if",T_IF},{"elif",T_ELIF},{"else",T_ELSE},
     {"while",T_WHILE},{"fn",T_FN},{"return",T_RETURN},
+    {"for",T_FOR},{"break",T_BREAK},{"continue",T_CONTINUE},
     {"and",T_AND},{"or",T_OR},{"not",T_NOT},
     {NULL,0}
 };
@@ -222,8 +226,18 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
         char c = lx_peek(&lx, 0);
         if (c == ' ' || c == '\t' || c == '\r') { lx_adv(&lx); continue; }
         if (c == '\n') { lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_NEWLINE, 0, NULL)); continue; }
-        if (c == '/' && lx_peek(&lx, 1) == '/') {          /* коментар */
+        if (c == '/' && lx_peek(&lx, 1) == '/') {          /* коментар // */
             while (lx_peek(&lx, 0) != '\n' && lx_peek(&lx, 0) != '\0') lx_adv(&lx);
+            continue;
+        }
+        if (c == '/' && lx_peek(&lx, 1) == '*') {   // блоковий коментар
+            lx_adv(&lx); lx_adv(&lx);
+            while (1) {
+                if (lx_peek(&lx, 0) == '\0')
+                    fatal_fmt("Незакритий коментар /* (рядок %d)", lx.line);
+                if (lx_peek(&lx, 0) == '*' && lx_peek(&lx, 1) == '/') { lx_adv(&lx); lx_adv(&lx); break; }
+                lx_adv(&lx);
+            }
             continue;
         }
         if (c == '"') { lx_push(&lx, lx_string(&lx)); continue; }
@@ -253,6 +267,7 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
             case '[': t = T_LBRACKET; break;
             case ']': t = T_RBRACKET; break;
             case ',': t = T_COMMA; break;
+            case ';': t = T_SEMICOLON; break;
             default:
                 fatal_fmt("Невідомий символ '%c' (рядок %d)", c, lx.line);
         }
@@ -268,7 +283,7 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
 enum {
     N_NUM, N_STR, N_VAR, N_BOOL, N_NIL, N_ARRAY, N_INDEX, N_IDXASSIGN,
     N_BINOP, N_UNARY, N_ASSIGN, N_LET, N_IF, N_WHILE, N_FN, N_CALL,
-    N_RETURN, N_BLOCK
+    N_RETURN, N_BLOCK, N_FOR, N_BREAK, N_CONTINUE
 };
 
 typedef struct Node Node;
@@ -331,6 +346,7 @@ static void pr_skip_nl(Parser *p) {
 
 static Node *pr_expr(Parser *p);
 static Node *pr_stmt(Parser *p);
+static Node *pr_for(Parser *p);
 
 static Node *pr_block(Parser *p) {
     pr_expect(p, T_LBRACE);
@@ -433,12 +449,31 @@ static Node *pr_stmt(Parser *p) {
         case T_LET:    return pr_let(p);
         case T_IF:     return pr_if(p);
         case T_WHILE:  return pr_while(p);
+        case T_FOR:    return pr_for(p);
         case T_FN:     return pr_fn(p);
         case T_RETURN: return pr_return(p);
+        case T_BREAK:  { int line = pr_adv(p).line; return new_node(p->a, N_BREAK, line); }
+        case T_CONTINUE: { int line = pr_adv(p).line; return new_node(p->a, N_CONTINUE, line); }
         case T_LBRACE: return pr_block(p);
-        case T_NEWLINE: p->i++; return pr_stmt(p);
+        case T_NEWLINE:
+        case T_SEMICOLON: p->i++; return pr_stmt(p);
         default:       return pr_expr_stmt(p);
     }
+}
+
+/* for i = 0; i < 10; i = i + 1 { ... } */
+static Node *pr_for(Parser *p) {
+    int line = pr_adv(p).line;                    /* for */
+    Node *n = new_node(p->a, N_FOR, line);
+    n->a = pr_expr_stmt(p);                       /* ініціалізація */
+    pr_expect(p, T_SEMICOLON);
+    n->b = pr_expr(p);                            /* умова */
+    pr_expect(p, T_SEMICOLON);
+    n->items = (Node **)a_alloc(p->a, sizeof(Node *));
+    n->items[0] = pr_expr_stmt(p);                /* крок */
+    n->n = 1;
+    n->c = pr_block(p);                           /* тіло */
+    return n;
 }
 
 /* вирази — прецедентне сходження */
@@ -676,6 +711,8 @@ struct Interp {
     Env *env;
     jmp_buf *ret_jmp;      /* поточний кадр `return` (ланцюжок викликів) */
     Value ret_val;
+    jmp_buf *loop_jmp;     /* поточний кадр циклу (break/continue) */
+    int loop_kind;         /* 1 = break, 2 = continue */
     jmp_buf err_jmp;       /* помилка → верхній рівень */
     char errmsg[512];
 };
@@ -1018,10 +1055,53 @@ static void exec(Interp *I, Node *n) {
                 exec_block(I, n->c);
             return;
         }
-        case N_WHILE:
-            while (truthy(eval(I, n->a)))
-                exec_block(I, n->b);
+        case N_WHILE: {
+            jmp_buf jb; jmp_buf *prev_loop = I->loop_jmp;
+            I->loop_jmp = &jb;
+            while (truthy(eval(I, n->a))) {
+                int sig = setjmp(jb);
+                if (sig == 0) {
+                    exec_block(I, n->b);
+                } else if (I->loop_kind == 1) {
+                    I->loop_kind = 0; break;
+                } else { I->loop_kind = 0; }
+            }
+            I->loop_jmp = prev_loop;
             return;
+        }
+        case N_FOR: {
+            jmp_buf jb; jmp_buf *prev_loop = I->loop_jmp;
+            I->loop_jmp = &jb;
+            if (n->a->kind == N_ASSIGN) {        /* init: автооголошення змінної */
+            Value v = eval(I, n->a->a);
+            if (!env_assign(I->env, n->a->str, v))
+                env_set(I->env, n->a->str, v);
+        } else {
+            exec(I, n->a);
+        }
+            while (1) {
+                if (!truthy(eval(I, n->b))) break; /* cond */
+                int sig = setjmp(jb);
+                if (sig == 0) {
+                    exec_block(I, n->c);           /* body */
+                    exec(I, n->items[0]);          /* step */
+                } else if (I->loop_kind == 1) {
+                    I->loop_kind = 0; break;
+                } else { I->loop_kind = 0; }      /* continue → step */
+            }
+            I->loop_jmp = prev_loop;
+            return;
+        }
+        case N_BREAK: {
+            if (!I->loop_jmp) err_raise(I, "break поза циклом");
+            I->loop_kind = 1;
+            longjmp(*I->loop_jmp, 1);
+        }
+        case N_CONTINUE: {
+            if (!I->loop_jmp) err_raise(I, "continue поза циклом");
+            I->loop_kind = 2;
+            longjmp(*I->loop_jmp, 1);
+        }
         case N_FN: {
             Value v;
             v.type = V_FUNC;
@@ -1101,6 +1181,123 @@ static Value b_str(Interp *I, Value *args, int n) {
     return mk_str(fmt_val(I->a, args[0]));
 }
 
+/* ── математика ── */
+static double need_num(Interp *I, Value v) {
+    if (v.type != V_NUM) err_raise(I, "очікується число");
+    return v.num;
+}
+static Value b_abs(Interp *I, Value *a, int n) {
+    if (n != 1) err_raise(I, "abs() очікує 1 аргумент");
+    return mk_num(fabs(need_num(I, a[0])));
+}
+static Value b_min(Interp *I, Value *a, int n) {
+    if (n != 2) err_raise(I, "min() очікує 2 аргументи");
+    double x = need_num(I, a[0]), y = need_num(I, a[1]);
+    return mk_num(x < y ? x : y);
+}
+static Value b_max(Interp *I, Value *a, int n) {
+    if (n != 2) err_raise(I, "max() очікує 2 аргументи");
+    double x = need_num(I, a[0]), y = need_num(I, a[1]);
+    return mk_num(x > y ? x : y);
+}
+static Value b_floor(Interp *I, Value *a, int n) {
+    if (n != 1) err_raise(I, "floor() очікує 1 аргумент");
+    return mk_num(floor(need_num(I, a[0])));
+}
+static Value b_ceil(Interp *I, Value *a, int n) {
+    if (n != 1) err_raise(I, "ceil() очікує 1 аргумент");
+    return mk_num(ceil(need_num(I, a[0])));
+}
+static Value b_round(Interp *I, Value *a, int n) {
+    if (n != 1) err_raise(I, "round() очікує 1 аргумент");
+    return mk_num(round(need_num(I, a[0])));
+}
+static Value b_sqrt(Interp *I, Value *a, int n) {
+    if (n != 1) err_raise(I, "sqrt() очікує 1 аргумент");
+    double x = need_num(I, a[0]);
+    if (x < 0) err_raise(I, "sqrt(): від'ємне число");
+    return mk_num(sqrt(x));
+}
+static Value b_pow(Interp *I, Value *a, int n) {
+    if (n != 2) err_raise(I, "pow() очікує 2 аргументи");
+    return mk_num(pow(need_num(I, a[0]), need_num(I, a[1])));
+}
+
+/* ── масиви ── */
+static Value b_range(Interp *I, Value *a, int n) {
+    long long start = 0, end;
+    if (n == 1) end = (long long)need_num(I, a[0]);
+    else if (n == 2) { start = (long long)need_num(I, a[0]); end = (long long)need_num(I, a[1]); }
+    else err_raise(I, "range() очікує 1–2 аргументи");
+    if (end < start) err_raise(I, "range(): кінець менший за початок");
+    Value v; v.type = V_ARR; v.len = (int)(end - start);
+    v.items = (Value *)a_alloc(I->a, (size_t)(v.len ? v.len : 1) * sizeof(Value));
+    for (long long i = start; i < end; i++) v.items[i - start] = mk_num((double)i);
+    return v;
+}
+static Value b_push(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_ARR) err_raise(I, "push() очікує (масив, значення)");
+    Value v; v.type = V_ARR; v.len = a[0].len + 1;
+    v.items = (Value *)a_alloc(I->a, (size_t)v.len * sizeof(Value));
+    memcpy(v.items, a[0].items, (size_t)a[0].len * sizeof(Value));
+    v.items[a[0].len] = a[1];
+    return v;
+}
+static Value b_pop(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_ARR) err_raise(I, "pop() очікує масив");
+    if (a[0].len == 0) err_raise(I, "pop(): масив порожній");
+    Value v; v.type = V_ARR; v.len = a[0].len - 1;
+    v.items = (Value *)a_alloc(I->a, (size_t)(v.len ? v.len : 1) * sizeof(Value));
+    memcpy(v.items, a[0].items, (size_t)v.len * sizeof(Value));
+    return v;
+}
+
+/* ── рядки ── */
+static Value b_join(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_ARR || a[1].type != V_STR)
+        err_raise(I, "join() очікує (масив, розділювач)");
+    size_t total = 1;
+    char **parts = (char **)a_alloc(I->a, (size_t)(a[0].len ? a[0].len : 1) * sizeof(char *));
+    for (int i = 0; i < a[0].len; i++) {
+        parts[i] = fmt_val(I->a, a[0].items[i]);
+        total += strlen(parts[i]);
+        if (i < a[0].len - 1) total += strlen(a[1].str);
+    }
+    char *out = (char *)a_alloc(I->a, total);
+    out[0] = '\0';
+    for (int i = 0; i < a[0].len; i++) {
+        if (i) strcat(out, a[1].str);
+        strcat(out, parts[i]);
+    }
+    return mk_str(out);
+}
+static Value b_split(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_STR || a[1].type != V_STR)
+        err_raise(I, "split() очікує (рядок, розділювач)");
+    const char *s = a[0].str, *sep = a[1].str;
+    size_t sl = strlen(s), sepl = strlen(sep);
+    if (sepl == 0) err_raise(I, "split(): порожній розділювач");
+    int cnt = 1;
+    for (size_t i = 0; i + sepl <= sl; i++)
+        if (!strncmp(s + i, sep, sepl)) { cnt++; i += sepl - 1; }
+    Value v; v.type = V_ARR; v.len = cnt;
+    v.items = (Value *)a_alloc(I->a, (size_t)cnt * sizeof(Value));
+    const char *p = s; int k = 0;
+    while (1) {
+        const char *f = strstr(p, sep);
+        if (!f) { v.items[k++] = mk_str(a_strdup(I->a, p)); break; }
+        v.items[k++] = mk_str(a_strndup(I->a, p, (size_t)(f - p)));
+        p = f + sepl;
+    }
+    return v;
+}
+static Value b_exit(Interp *I, Value *a, int n) {
+    (void)I;
+    int code = 0;
+    if (n >= 1 && a[0].type == V_NUM) code = (int)a[0].num;
+    exit(code);
+}
+
 static void install_builtins(Interp *I) {
     Env *g = I->env;
     Value p; p.type = V_NATIVE; p.native = b_print; p.fnname = "print"; env_set(g, "print", p);
@@ -1109,6 +1306,20 @@ static void install_builtins(Interp *I) {
     Value ty; ty.type = V_NATIVE; ty.native = b_type; ty.fnname = "type"; env_set(g, "type", ty);
     Value nm; nm.type = V_NATIVE; nm.native = b_num; nm.fnname = "num"; env_set(g, "num", nm);
     Value st; st.type = V_NATIVE; st.native = b_str; st.fnname = "str"; env_set(g, "str", st);
+    Value by; by.type = V_NATIVE; by.native = b_abs; by.fnname = "abs"; env_set(g, "abs", by);
+    Value mn; mn.type = V_NATIVE; mn.native = b_min; mn.fnname = "min"; env_set(g, "min", mn);
+    Value mx; mx.type = V_NATIVE; mx.native = b_max; mx.fnname = "max"; env_set(g, "max", mx);
+    Value fl; fl.type = V_NATIVE; fl.native = b_floor; fl.fnname = "floor"; env_set(g, "floor", fl);
+    Value cl; cl.type = V_NATIVE; cl.native = b_ceil; cl.fnname = "ceil"; env_set(g, "ceil", cl);
+    Value rd; rd.type = V_NATIVE; rd.native = b_round; rd.fnname = "round"; env_set(g, "round", rd);
+    Value sq; sq.type = V_NATIVE; sq.native = b_sqrt; sq.fnname = "sqrt"; env_set(g, "sqrt", sq);
+    Value pw; pw.type = V_NATIVE; pw.native = b_pow; pw.fnname = "pow"; env_set(g, "pow", pw);
+    Value rg; rg.type = V_NATIVE; rg.native = b_range; rg.fnname = "range"; env_set(g, "range", rg);
+    Value pu; pu.type = V_NATIVE; pu.native = b_push; pu.fnname = "push"; env_set(g, "push", pu);
+    Value po; po.type = V_NATIVE; po.native = b_pop; po.fnname = "pop"; env_set(g, "pop", po);
+    Value jn; jn.type = V_NATIVE; jn.native = b_join; jn.fnname = "join"; env_set(g, "join", jn);
+    Value sp; sp.type = V_NATIVE; sp.native = b_split; sp.fnname = "split"; env_set(g, "split", sp);
+    Value ex; ex.type = V_NATIVE; ex.native = b_exit; ex.fnname = "exit"; env_set(g, "exit", ex);
 }
 
 /* ═══════════ Запуск ═══════════ */
