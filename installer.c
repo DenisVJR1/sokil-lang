@@ -41,6 +41,8 @@
 
 static wchar_t APP_DIR[MAX_PATH];
 static HWND hMain;
+static HWND hChkPath;
+static HBRUSH hbrCard;
 
 /* ── PATH ── */
 static void notify(void) {
@@ -105,7 +107,7 @@ static int assoc_has(void) {
 }
 
 /* ── Install / Update / Uninstall ── */
-static BOOL do_install(void) {
+static BOOL do_install(int patch) {
     if (!CreateDirectoryW(APP_DIR, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return FALSE;
     wchar_t exe[MAX_PATH];
     wsprintfW(exe, L"%s\\sokil.exe", APP_DIR);
@@ -115,7 +117,8 @@ static BOOL do_install(void) {
     WriteFile(h, sokil_exe_data, sokil_exe_len, &w, NULL);
     CloseHandle(h);
     if (w != sokil_exe_len) return FALSE;
-    path_add(APP_DIR);
+    if (patch)
+        path_add(APP_DIR);
     assoc_add(exe);
     return TRUE;
 }
@@ -250,6 +253,12 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         fTitle = CreateFontW(26, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
         fBody  = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
         fSmall = CreateFontW(10, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
+        hbrCard = CreateSolidBrush(M3_CARD);
+        hChkPath = CreateWindowW(L"BUTTON", L"Патчити PATH (додати до PATH)",
+            WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX|WS_TABSTOP,
+            38, 164, 300, 26, hw, NULL, NULL, NULL);
+        SendMessageW(hChkPath, WM_SETFONT, (WPARAM)fBody, TRUE);
+        SendMessageW(hChkPath, BM_SETCHECK, BST_CHECKED, 0);
         CreateWindowW(L"M3Btn", L"Встановити",
             WS_CHILD|WS_VISIBLE, 24, 210, 128, 44, hw, (HMENU)BTN_INSTALL, NULL, NULL);
         CreateWindowW(L"M3Btn", L"Оновити",
@@ -268,14 +277,16 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_COMMAND:
         switch (LOWORD(wp)) {
         case BTN_INSTALL: {
-            BOOL ok = do_install();
+            BOOL patch = SendMessageW(hChkPath, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            BOOL ok = do_install(patch);
             set_status(ok ? L"✓ Встановлено! Новий термінал →  sokil файл.sokil"
                           : L"✗ Помилка встановлення", ok ? M3_OK : M3_ERR);
             InvalidateRect(hw, NULL, TRUE);
             break;
         }
         case BTN_UPDATE: {
-            BOOL ok = do_install();
+            BOOL patch = SendMessageW(hChkPath, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            BOOL ok = do_install(patch);
             set_status(ok ? L"✓ Оновлено! Бінарник, PATH та .sokil перевірено"
                           : L"✗ Помилка оновлення", ok ? M3_OK : M3_ERR);
             InvalidateRect(hw, NULL, TRUE);
@@ -314,11 +325,9 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         SetTextColor(hdc, M3_ON_SURFACE);
         wchar_t line[1024];
         wsprintfW(line, L"Каталог        %s", APP_DIR);
-        rc = (RECT){38, 102, 402, 126}; DrawTextW(hdc, line, -1, &rc, DT_LEFT|DT_SINGLELINE);
-        wsprintfW(line, L"PATH           %s", path_has(APP_DIR) ? L"так" : L"ні");
-        rc = (RECT){38, 134, 402, 158}; DrawTextW(hdc, line, -1, &rc, DT_LEFT|DT_SINGLELINE);
+        rc = (RECT){38, 100, 402, 124}; DrawTextW(hdc, line, -1, &rc, DT_LEFT|DT_SINGLELINE);
         wsprintfW(line, L"Файли .sokil   %s", assoc_has() ? L"так" : L"ні");
-        rc = (RECT){38, 166, 402, 190}; DrawTextW(hdc, line, -1, &rc, DT_LEFT|DT_SINGLELINE);
+        rc = (RECT){38, 132, 402, 156}; DrawTextW(hdc, line, -1, &rc, DT_LEFT|DT_SINGLELINE);
         SelectObject(hdc, old);
 
         SelectObject(hdc, fBody);
@@ -334,8 +343,16 @@ static LRESULT CALLBACK WndProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         EndPaint(hw, &ps);
         return 0;
     }
+    case WM_CTLCOLORSTATIC:
+        if ((HWND)lp == hChkPath) {
+            SetBkMode((HDC)wp, TRANSPARENT);
+            SetTextColor((HDC)wp, M3_ON_SURFACE);
+            return (LRESULT)hbrCard;
+        }
+        break;
     case WM_DESTROY:
         DeleteObject(fTitle); DeleteObject(fBody); DeleteObject(fSmall);
+        if (hbrCard) DeleteObject(hbrCard);
         PostQuitMessage(0);
         return 0;
     }
@@ -383,9 +400,9 @@ int main(int argc, char **argv) {
     }
     wcscat_s(APP_DIR, MAX_PATH, L"\\Sokil");
     if (argc > 1) {
-        if (!strcmp(argv[1], "--install"))   return do_install()  ? 0 : 1;
+        if (!strcmp(argv[1], "--install"))   return do_install(1) ? 0 : 1;
         if (!strcmp(argv[1], "--uninstall")) return do_uninstall() ? 0 : 1;
-        if (!strcmp(argv[1], "--version"))   { printf("Sokil Setup v2.2\n"); return 0; }
+        if (!strcmp(argv[1], "--version"))   { printf("Sokil Setup v2.3\n"); return 0; }
         if (!strcmp(argv[1], "--path"))      { printf("%S\n", APP_DIR); return 0; }
     }
     return gui_main();

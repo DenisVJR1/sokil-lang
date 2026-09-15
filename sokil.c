@@ -21,6 +21,7 @@
 #include <time.h>
 #ifdef _WIN32
 #include <windows.h>
+#include <urlmon.h>
 #else
 #include <unistd.h>
 #endif
@@ -1397,12 +1398,11 @@ static void install_builtins(Interp *I) {
 
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
-"  ███████╗ ██████╗ ██╗  ██╗██╗██╗\n"
-"  ██╔════╝██╔═══██╗██║ ██╔╝██║██║\n"
-"  ███████╗██║   ██║█████╔╝ ██║██║\n"
-"  ╚════██║██║   ██║██╔═██╗ ██║██║\n"
-"  ███████║╚██████╔╝██║  ██╗██║███████╗\n"
-"  ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝\n";
+"=================================\n"
+"  Сокіл (Sokil) v2.3 — мова програмування\n"
+"  sokil файл.sokil · sokil -e \"код\" · sokil --update\n"
+"  REPL: введи код, exit — вийти\n"
+"=================================\n";
 
 static int run_ast(Arena *a, Node *prog) {
     Interp I;
@@ -1476,10 +1476,73 @@ static char *read_file(Arena *a, const char *path, int *ok) {
     return buf;
 }
 
+/* ── Самооновлення: sokil --update ── */
+#ifdef _WIN32
+static int cmd_update(void) {
+    wchar_t cur[MAX_PATH];
+    GetModuleFileNameW(NULL, cur, MAX_PATH);
+    wchar_t tmp[MAX_PATH];
+    GetTempPathW(MAX_PATH, tmp);
+    wsprintfW(tmp + wcslen(tmp), L"sokil-new-%lu.exe", GetCurrentProcessId());
+    printf("Сокіл: завантажую останню версію з GitHub...\n");
+    fflush(stdout);
+    HRESULT hr = URLDownloadToFileW(NULL,
+        L"https://github.com/DenisVJR1/sokil-lang/releases/latest/download/sokil.exe",
+        tmp, 0, NULL);
+    if (FAILED(hr)) {
+        printf("Помилка завантаження (%08lX)\n", (unsigned long)hr);
+        return 1;
+    }
+    FILE *f = _wfopen(tmp, L"rb");
+    unsigned char mz[2] = {0};
+    if (f) { fread(mz, 1, 2, f); fclose(f); }
+    if (mz[0] != 'M' || mz[1] != 'Z') {
+        printf("Завантажений файл не схожий на програму — оновлення скасовано.\n");
+        DeleteFileW(tmp);
+        return 1;
+    }
+    wchar_t bat[MAX_PATH];
+    GetTempPathW(MAX_PATH, bat);
+    wsprintfW(bat + wcslen(bat), L"sokil-up-%lu.bat", GetCurrentProcessId());
+    FILE *fb = _wfopen(bat, L"w");
+    if (!fb) { DeleteFileW(tmp); return 1; }
+    fwprintf(fb, L"@echo off\r\nping 127.0.0.1 -n 2 >nul\r\n"
+                 L"move /y \"%s\" \"%s\"\r\ndel \"%%~f0\"\r\n", tmp, cur);
+    fclose(fb);
+    wchar_t cmdline[2048];
+    wsprintfW(cmdline, L"cmd /c \"%s\"", bat);
+    STARTUPINFOW si = { sizeof si };
+    PROCESS_INFORMATION pi = {0};
+    if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    }
+    printf("Оновлення встановлено. Перезапусти sokil.\n");
+    return 0;
+}
+#else
+static int cmd_update(void) {
+    printf("Оновлення з репозиторію:\n"
+           "  git pull\n"
+           "  sudo ./install.sh\n"
+           "або завантаж нову збірку з Releases.\n");
+    return 0;
+}
+#endif
+
 int main(int argc, char **argv) {
     g_argc = argc; g_argv = argv;
     srand((unsigned)time(NULL));
+#ifdef _WIN32
+    SetConsoleOutputCP(65001);   /* UTF-8 вивід без крякозябр */
+    SetConsoleCP(65001);
+#endif
     if (argc > 1) {
+        if (!strcmp(argv[1], "--update")) return cmd_update();
+        if (!strcmp(argv[1], "--version")) {
+            printf("Sokil v2.3\n");
+            return 0;
+        }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
             g_args_start = 3;
             if (argc < 3) {
