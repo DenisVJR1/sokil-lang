@@ -130,7 +130,7 @@ static BOOL do_uninstall(void) {
 }
 
 /* ═══════════ Custom кнопка M3 ═══════════ */
-typedef struct { BOOL hover, down, primary; } BtnSt;
+typedef struct { BOOL hover, down, primary; wchar_t label[32]; } BtnSt;
 static void b_round_fill(HDC hdc, RECT *rc, COLORREF col, int r) {
     HBRUSH br = CreateSolidBrush(col);
     HRGN rg = CreateRoundRectRgn(rc->left, rc->top, rc->right+1, rc->bottom+1, r*2, r*2);
@@ -147,6 +147,10 @@ static LRESULT CALLBACK M3BtnProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         BtnSt *s = (BtnSt *)calloc(1, sizeof(BtnSt));
         CREATESTRUCTW *cs = (CREATESTRUCTW *)lp;
         s->primary = (cs->hMenu == (HMENU)BTN_INSTALL || cs->hMenu == (HMENU)BTN_UPDATE);
+        if (cs->lpszName) {
+            wcsncpy(s->label, cs->lpszName, 31);
+            s->label[31] = L'\0';
+        }
         SetWindowLongPtrW(hw, GWLP_USERDATA, (LONG_PTR)s);
         return TRUE;
     }
@@ -161,18 +165,14 @@ static LRESULT CALLBACK M3BtnProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         } else {
             bg = st->down ? RGB(0xD0,0xBC,0xE8) : st->hover ? RGB(0xF0,0xE6,0xFF) : M3_TONAL;
             fg = M3_TONAL_TXT;
-            b_round_fill(hdc, &rc, bg, 8);
         }
-        if (st->primary)
-            b_round_fill(hdc, &rc, bg, 8);
+        b_round_fill(hdc, &rc, bg, 8);
         HFONT f = CreateFontW(15, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0,
             DEFAULT_CHARSET, 0, 0, 0, 0, L"Segoe UI");
         HFONT old = (HFONT)SelectObject(hdc, f);
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, fg);
-        wchar_t txt[64];
-        GetWindowTextW(hw, txt, 64);
-        DrawTextW(hdc, txt, -1, &rc, DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        DrawTextW(hdc, st->label, -1, &rc, DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         SelectObject(hdc, old);
         DeleteObject(f);
         EndPaint(hw, &ps);
@@ -182,6 +182,23 @@ static LRESULT CALLBACK M3BtnProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
         st->down = TRUE;
         SetCapture(hw);
         InvalidateRect(hw, NULL, TRUE);
+        return 0;
+    case WM_SETTEXT:
+        if (st && lp) {
+            wcsncpy(st->label, (const wchar_t *)lp, 31);
+            st->label[31] = L'\0';
+            InvalidateRect(hw, NULL, TRUE);
+            return TRUE;
+        }
+        return FALSE;
+    case WM_GETTEXTLENGTH:
+        return st ? (LRESULT)wcslen(st->label) : 0;
+    case WM_GETTEXT:
+        if (st && lp && wp > 0) {
+            wcsncpy((wchar_t *)lp, st->label, wp - 1);
+            ((wchar_t *)lp)[wp - 1] = L'\0';
+            return (LRESULT)wcslen(st->label);
+        }
         return 0;
     case WM_LBUTTONUP: {
         st->down = FALSE;
