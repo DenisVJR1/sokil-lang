@@ -16,6 +16,7 @@
 - ✅ Windows / Linux / macOS
 - ✅ `sokil --update` — самооновлення з GitHub
 - ✅ Подвійний клік по `.sokil` — запуск (асоціація ставиться інсталятором)
+- ✅ **Самовідновлення PATH** — `sokil` сам повертає свій запис у PATH, якщо він зник
 - ✅ Власний інсталятор-майстер (wizard) з анімованим фоном з коду
 
 ### Встановлення (Windows)
@@ -109,6 +110,7 @@ A simple but real programming language: zero dependencies, one pure-C (C99) file
 - ✅ Windows / Linux / macOS
 - ✅ `sokil --update` — self-update from GitHub
 - ✅ Double-click `.sokil` to run (association set by installer)
+- ✅ **PATH self-heal** — `sokil` restores its PATH entry automatically if it disappears
 - ✅ Own wizard installer with animated code background
 
 ### Install (Windows)

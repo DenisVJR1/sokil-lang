@@ -1936,7 +1936,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.10 — мова програмування\n"
+"  Сокіл (Sokil) v2.11 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2177,12 +2177,74 @@ static int cmd_compile(const char *srcpath) {
     return 0;
 }
 
+/* Самовідновлення PATH: якщо інстальована копія (з %LOCALAPPDATA%\Sokil),
+   а запис у HKCU\Environment Path зник — дописуємо і сповіщаємо систему. */
+static void path_guard(void) {
+#ifdef _WIN32
+    char dir[MAX_PATH], target[MAX_PATH];
+    GetModuleFileNameA(NULL, dir, MAX_PATH);
+    char *sl = strrchr(dir, '\\');
+    if (!sl) return;
+    *sl = '\0';
+    const char *la = getenv("LOCALAPPDATA");
+    if (!la) return;
+    snprintf(target, sizeof target, "%s\\Sokil", la);
+    if (_stricmp(dir, target) != 0) return;      /* портативна копія — не чіпаємо */
+
+    HKEY hk;
+    if (RegOpenKeyExA(HKEY_CURRENT_USER, "Environment", 0,
+                      KEY_QUERY_VALUE | KEY_SET_VALUE, &hk) != ERROR_SUCCESS)
+        return;
+    char cur[8192]; DWORD type = REG_EXPAND_SZ, size = sizeof cur; cur[0] = '\0';
+    LONG r = RegQueryValueExA(hk, "Path", NULL, &type, (LPBYTE)cur, &size);
+    if (r == ERROR_SUCCESS && type != REG_EXPAND_SZ && type != REG_SZ)
+        { RegCloseKey(hk); return; }
+    /* чи вже є entry (без врахування регістру, з ';' межами) */
+    size_t tl = strlen(target);
+    int found = 0;
+    if (r == ERROR_SUCCESS) {
+        char *start = cur;
+        for (char *q = cur; ; q++) {
+            if (*q == ';' || *q == '\0') {
+                size_t len = (size_t)(q - start);
+                if (len == tl && _strnicmp(start, target, tl) == 0) { found = 1; break; }
+                if (*q == '\0') break;
+                start = q + 1;
+            }
+        }
+    }
+    if (found) { RegCloseKey(hk); return; }
+    if (r == ERROR_SUCCESS && size >= sizeof cur) { RegCloseKey(hk); return; }
+    /* дописуємо */
+    size_t cl = r == ERROR_SUCCESS ? strlen(cur) : 0;
+    char *newp = (char *)malloc(cl + tl + 3);
+    if (!newp) { RegCloseKey(hk); return; }
+    size_t o = 0;
+    /* копіюємо cur без провідних ';' */
+    if (r == ERROR_SUCCESS) {
+        size_t s = 0;
+        while (cur[s] == ';') s++;
+        for (size_t i = s; i < cl; i++) newp[o++] = cur[i];
+    }
+    if (o > 0 && newp[o - 1] != ';') newp[o++] = ';';
+    memcpy(newp + o, target, tl); o += tl;
+    while (o > 0 && newp[o - 1] == ';') o--;
+    newp[o] = '\0';
+    RegSetValueExA(hk, "Path", 0, REG_EXPAND_SZ, (const BYTE *)newp, (DWORD)o + 1);
+    RegCloseKey(hk);
+    free(newp);
+    SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"Environment",
+                        SMTO_ABORTIFHUNG, 5000, NULL);
+#endif
+}
+
 int main(int argc, char **argv) {
     g_argc = argc; g_argv = argv;
     srand((unsigned)time(NULL));
 #ifdef _WIN32
     SetConsoleOutputCP(65001);   /* UTF-8 вивід без крякозябр */
     SetConsoleCP(65001);
+    path_guard();
 #endif
     if (argc > 1 && !strcmp(argv[1], "--compile"))
         return cmd_compile(argc > 2 ? argv[2] : NULL);
@@ -2190,7 +2252,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.10\n");
+            printf("Sokil v2.11\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
