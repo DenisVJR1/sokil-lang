@@ -45,7 +45,7 @@ static HBRUSH hbrCard, hbrSurface;
 static wchar_t statusTxt[512];
 static int g_page = 0;
 static int g_anim = 0;
-static wchar_t CUR_VER[] = L"2.13";
+static wchar_t CUR_VER[] = L"2.14";
 
 #define MAX_VER 16
 static wchar_t ver_urls[MAX_VER][768];
@@ -575,7 +575,7 @@ int wmain(void) {
         int code;
         if (!wcscmp(argv[1], L"--install"))      code = do_install(1, 0) ? 0 : 1;
         else if (!wcscmp(argv[1], L"--uninstall")) code = do_uninstall() ? 0 : 1;
-        else if (!wcscmp(argv[1], L"--version")) { printf("Sokil Setup v%s\n", "2.13"); return 0; }
+        else if (!wcscmp(argv[1], L"--version")) { printf("Sokil Setup v%s\n", "2.14"); return 0; }
         else if (!wcscmp(argv[1], L"--path"))    { printf("%S\n", APP_DIR); return 0; }
         else return 1;
         LocalFree(argv);

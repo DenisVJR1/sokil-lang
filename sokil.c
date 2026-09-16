@@ -1536,7 +1536,16 @@ static Value b_sleep(Interp *I, Value *a, int n) {
 }
 
 static Value b_contains(Interp *I, Value *a, int n) {
-    if (n != 2) err_raise(I, "contains() очікує 2 аргументи (рядок, підрядок)");
+    if (n != 2) err_raise(I, "contains() очікує 2 аргументи (рядок або масив, значення)");
+    if (a[0].type == V_ARR) {
+        for (int i = 0; i < a[0].len; i++)
+            if (a[0].items[i].type == a[1].type &&
+                (a[1].type == V_NUM ? a[0].items[i].num == a[1].num
+                 : a[1].type == V_STR ? a[0].items[i].type == V_STR &&
+                   !strcmp(a[0].items[i].str, a[1].str) : 0))
+                return mk_bool(1);
+        return mk_bool(0);
+    }
     if (a[0].type != V_STR || a[1].type != V_STR)
         err_raise(I, "contains(): обидва аргументи — рядки");
     return mk_bool(strstr(a[0].str, a[1].str) != NULL);
@@ -1949,6 +1958,72 @@ static Value b_env(Interp *I, Value *a, int n) {
     return v ? mk_str(a_strdup(I->a, v)) : mk_nil();
 }
 
+/* ===== Зручність (легкість) ===== */
+static Value b_fmt(Interp *I, Value *a, int n) {
+    if (n < 1 || a[0].type != V_STR) err_raise(I, "fmt(fmt, ...) — {} плейсхолдери");
+    const char *p = a[0].str;
+    size_t cap = strlen(p) + 64, len = 0;
+    char *buf = (char *)a_alloc(I->a, cap);
+    int ai = 1;
+    for (; *p; p++) {
+        if (p[0] == '{' && p[1] == '}') {
+            if (ai >= n) err_raise(I, "fmt: мало аргументів");
+            char *s = fmt_val(I->a, a[ai++]);
+            size_t sl = strlen(s);
+            if (len + sl + 2 >= cap) { cap *= 2; char *nb = (char *)a_alloc(I->a, cap); memcpy(nb, buf, len); buf = nb; }
+            memcpy(buf + len, s, sl); len += sl;
+            p++;
+        } else {
+            if (len + 2 >= cap) { cap *= 2; char *nb = (char *)a_alloc(I->a, cap); memcpy(nb, buf, len); buf = nb; }
+            buf[len++] = *p;
+        }
+    }
+    buf[len] = '\0';
+    return mk_str(buf);
+}
+static Value b_count(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_STR || a[1].type != V_STR) err_raise(I, "count(str, sub)");
+    const char *h = a[0].str, *sub = a[1].str;
+    size_t nl = strlen(sub);
+    if (!nl) return mk_num(0);
+    int c = 0;
+    for (const char *q = h; (q = strstr(q, sub)); q += nl) c++;
+    return mk_num(c);
+}
+static Value b_insert(Interp *I, Value *a, int n) {
+    if (n != 3 || a[0].type != V_ARR || a[1].type != V_NUM) err_raise(I, "insert(arr, i, v) → новий масив");
+    long long i = (long long)a[1].num, L = a[0].len;
+    if (i < 0) i += L + 1;
+    if (i < 0 || i > L) err_raise(I, "insert: індекс поза межами");
+    Value v; v.type = V_ARR; v.len = L + 1;
+    v.items = (Value *)a_alloc(I->a, (size_t)v.len * sizeof(Value));
+    for (long long k = 0; k < i; k++) v.items[k] = a[0].items[k];
+    v.items[i] = a[2];
+    for (long long k = i; k < L; k++) v.items[k + 1] = a[0].items[k];
+    return v;
+}
+static Value b_remove(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_ARR || a[1].type != V_NUM) err_raise(I, "remove(arr, i) → новий масив");
+    long long i = (long long)a[1].num, L = a[0].len;
+    if (i < 0) i += L;
+    if (i < 0 || i >= L) err_raise(I, "remove: індекс поза межами");
+    Value v; v.type = V_ARR; v.len = L - 1;
+    v.items = (Value *)a_alloc(I->a, (size_t)(v.len ? v.len : 1) * sizeof(Value));
+    for (long long k = 0, j = 0; k < L; k++)
+        if (k != i) v.items[j++] = a[0].items[k];
+    return v;
+}
+static Value b_help(Interp *I, Value *a, int n) {
+    (void)a; (void)n;
+    Env *g = I->env;
+    printf("Вбудовані функції (%d):\n", g->n);
+    for (int i = 0; i < g->n; i++)
+        printf("  %s\n", g->names[i]);
+    printf("Ключові слова: let if elif else while for fn return break continue\n"
+           "               import try catch in and or not true false nil\n");
+    return mk_nil();
+}
+
 static void install_builtins(Interp *I) {
     Env *g = I->env;
     Value p; p.type = V_NATIVE; p.native = b_print; p.fnname = "print"; env_set(g, "print", p);
@@ -2038,6 +2113,12 @@ static void install_builtins(Interp *I) {
     Value xh; xh.type = V_NATIVE; xh.native = b_hex; xh.fnname = "hex"; env_set(g, "hex", xh);
     Value xu; xu.type = V_NATIVE; xu.native = b_uuid; xu.fnname = "uuid"; env_set(g, "uuid", xu);
     Value xv; xv.type = V_NATIVE; xv.native = b_env; xv.fnname = "env"; env_set(g, "env", xv);
+    /* зручність */
+    Value zf; zf.type = V_NATIVE; zf.native = b_fmt; zf.fnname = "fmt"; env_set(g, "fmt", zf);
+    Value zc; zc.type = V_NATIVE; zc.native = b_count; zc.fnname = "count"; env_set(g, "count", zc);
+    Value zi; zi.type = V_NATIVE; zi.native = b_insert; zi.fnname = "insert"; env_set(g, "insert", zi);
+    Value zr; zr.type = V_NATIVE; zr.native = b_remove; zr.fnname = "remove"; env_set(g, "remove", zr);
+    Value zh; zh.type = V_NATIVE; zh.native = b_help; zh.fnname = "help"; env_set(g, "help", zh);
     /* args — аргументи командного рядка */
     Value av; av.type = V_ARR;
     av.len = g_argc > g_args_start ? g_argc - g_args_start : 0;
@@ -2050,7 +2131,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.13 — мова програмування\n"
+"  Сокіл (Sokil) v2.14 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2366,7 +2447,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.13\n");
+            printf("Sokil v2.14\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */

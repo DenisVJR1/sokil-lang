@@ -80,7 +80,7 @@ print('тест ' + 42)       // рядок + число = конкатенац�
 - Цикли: `while умова { }`, `for i = 0; i < n; i = i + 1 { }`, `break`, `continue`
 - Функції: `fn name(арг) { return ... }` + замикання
 - Масиви: `[1,2,3]`, `push`, `pop`, `join`, `split`, індекси
-- Вбудовані: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid exec http_get download b64_encode b64_decode hex uuid env`
+- Вбудовані: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid exec http_get download b64_encode b64_decode hex uuid env fmt count insert remove help`
 - Оператори: `+ - * / % == != < > <= >= and or not`
 - Тернарний: `age >= 18 ? "дорослий" : "малий"`
 - Помилки: `try { ... } catch err { ... }` — `err` — текст помилки (змінна необов'язкова)
@@ -176,7 +176,7 @@ print('test ' + 42)       // string + number = concatenation
 - Arrays: `[1,2,3]`, `push`, `pop`, `join`, `split`, indexing
 - Comments: `//`, `#`, `/* */`
 - Run: `sokil file` — `.sokil` extension is optional
-- Built-ins: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid exec http_get download b64_encode b64_decode hex uuid env`
+- Built-ins: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid exec http_get download b64_encode b64_decode hex uuid env fmt count insert remove help`
 - Operators: `+ - * / % == != < > <= >= and or not`
 - Ternary: `age >= 18 ? "дорослий" : "малий"`
 - Errors: `try { ... } catch err { ... }` — `err` holds the message (variable optional)
