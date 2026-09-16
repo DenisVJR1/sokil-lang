@@ -22,6 +22,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <urlmon.h>
+#include <tlhelp32.h>
 #else
 #include <unistd.h>
 #endif
@@ -2024,6 +2025,118 @@ static Value b_help(Interp *I, Value *a, int n) {
     return mk_nil();
 }
 
+/* ===== Системні (ОС-інструменти) ===== */
+static Value b_start(Interp *I, Value *a, int n) {
+    if (n < 1 || a[0].type != V_STR) err_raise(I, "start(cmd) — запустити програму/URL");
+    HINSTANCE h = ShellExecuteA(NULL, "open", a[0].str, n>1 && a[1].type==V_STR ? a[1].str : NULL, NULL, SW_SHOWNORMAL);
+    return mk_num((intptr_t)h > 32);
+}
+static Value b_procs(Interp *I, Value *a, int n) {
+    (void)a; (void)n;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) err_raise(I, "procs: не вдалося");
+    PROCESSENTRY32 pe; pe.dwSize = sizeof pe;
+    int cap = 256, cnt = 0;
+    Value *arr = (Value *)a_alloc(I->a, (size_t)cap * sizeof(Value));
+    if (Process32First(snap, &pe)) do {
+        if (cnt >= cap) { cap *= 2; Value *n2 = (Value *)a_alloc(I->a, (size_t)cap * sizeof(Value)); memcpy(n2, arr, cnt*sizeof(Value)); arr = n2; }
+        arr[cnt++] = mk_str(a_strdup(I->a, pe.szExeFile));
+    } while (Process32Next(snap, &pe));
+    CloseHandle(snap);
+    Value v; v.type = V_ARR; v.len = cnt; v.items = arr;
+    return v;
+}
+static Value b_kill(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_NUM) err_raise(I, "kill(pid)");
+    HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)a[0].num);
+    if (!h) return mk_num(0);
+    int ok = TerminateProcess(h, 0);
+    CloseHandle(h);
+    return mk_num(ok);
+}
+static Value b_sysinfo(Interp *I, Value *a, int n) {
+    (void)a; (void)n;
+    Value v; v.type = V_ARR; v.len = 4;
+    v.items = (Value *)a_alloc(I->a, 4 * sizeof(Value));
+    v.items[0] = mk_str(a_strdup(I->a, "Windows"));
+    char arch[32];
+    SYSTEM_INFO si; GetNativeSystemInfo(&si);
+    snprintf(arch, sizeof arch, "%s", si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 ? "x64" : "x86");
+    v.items[1] = mk_str(a_strdup(I->a, arch));
+    MEMORYSTATUSEX ms; ms.dwLength = sizeof ms;
+    GlobalMemoryStatusEx(&ms);
+    char ram[32]; snprintf(ram, sizeof ram, "%lld MB", ms.ullTotalPhys / 1048576);
+    v.items[2] = mk_str(a_strdup(I->a, ram));
+    char cpus[16]; snprintf(cpus, sizeof cpus, "%d", si.dwNumberOfProcessors);
+    v.items[3] = mk_str(a_strdup(I->a, cpus));
+    return v;
+}
+static Value b_drives(Interp *I, Value *a, int n) {
+    (void)a; (void)n;
+    DWORD mask = GetLogicalDrives();
+    int cnt = 0; Value *arr = (Value *)a_alloc(I->a, 26 * sizeof(Value));
+    for (int i = 0; i < 26; i++) if (mask & (1 << i)) {
+        char d[4]; d[0] = 'A' + i; d[1] = ':'; d[2] = '\\'; d[3] = '\0';
+        arr[cnt++] = mk_str(a_strdup(I->a, d));
+    }
+    Value v; v.type = V_ARR; v.len = cnt; v.items = arr;
+    return v;
+}
+static Value b_mkdir(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "mkdir(path)");
+    return mk_num(CreateDirectoryA(a[0].str, NULL) || GetLastError() == ERROR_ALREADY_EXISTS);
+}
+static Value b_rm(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "rm(path)");
+    if (DeleteFileA(a[0].str)) return mk_num(1);
+    return mk_num(RemoveDirectoryA(a[0].str));
+}
+static Value b_cp(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_STR || a[1].type != V_STR) err_raise(I, "cp(src, dst)");
+    return mk_num(CopyFileA(a[0].str, a[1].str, FALSE));
+}
+static Value b_mv(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_STR || a[1].type != V_STR) err_raise(I, "mv(src, dst)");
+    return mk_num(MoveFileA(a[0].str, a[1].str));
+}
+static Value b_msgbox(Interp *I, Value *a, int n) {
+    if (n < 1 || a[0].type != V_STR) err_raise(I, "msgbox(text [, title])");
+    const char *title = (n >= 2 && a[1].type == V_STR) ? a[1].str : "Сокіл";
+    MessageBoxA(NULL, a[0].str, title, MB_OK | MB_ICONINFORMATION);
+    return mk_nil();
+}
+static Value b_title(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "title(text)");
+    SetConsoleTitleA(a[0].str);
+    return mk_nil();
+}
+static Value b_clip_get(Interp *I, Value *a, int n) {
+    (void)a; (void)n;
+    if (!OpenClipboard(NULL)) err_raise(I, "clip_get: не вдалося відкрити буфер");
+    HANDLE h = GetClipboardData(CF_UNICODETEXT);
+    if (!h) { CloseClipboard(); return mk_str(a_strdup(I->a, "")); }
+    wchar_t *w = (wchar_t *)GlobalLock(h);
+    int len = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
+    char *s = (char *)a_alloc(I->a, (size_t)len + 1);
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, s, len, NULL, NULL);
+    GlobalUnlock(h);
+    CloseClipboard();
+    return mk_str(s);
+}
+static Value b_clip_set(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "clip_set(str)");
+    if (!OpenClipboard(NULL)) err_raise(I, "clip_set: не вдалося відкрити буфер");
+    EmptyClipboard();
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, a[0].str, -1, NULL, 0);
+    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, (SIZE_T)wlen * sizeof(wchar_t));
+    wchar_t *w = (wchar_t *)GlobalLock(h);
+    MultiByteToWideChar(CP_UTF8, 0, a[0].str, -1, w, wlen);
+    GlobalUnlock(h);
+    SetClipboardData(CF_UNICODETEXT, h);
+    CloseClipboard();
+    return mk_nil();
+}
+
 static void install_builtins(Interp *I) {
     Env *g = I->env;
     Value p; p.type = V_NATIVE; p.native = b_print; p.fnname = "print"; env_set(g, "print", p);
@@ -2119,6 +2232,20 @@ static void install_builtins(Interp *I) {
     Value zi; zi.type = V_NATIVE; zi.native = b_insert; zi.fnname = "insert"; env_set(g, "insert", zi);
     Value zr; zr.type = V_NATIVE; zr.native = b_remove; zr.fnname = "remove"; env_set(g, "remove", zr);
     Value zh; zh.type = V_NATIVE; zh.native = b_help; zh.fnname = "help"; env_set(g, "help", zh);
+    /* ОС */
+    Value os1; os1.type = V_NATIVE; os1.native = b_start; os1.fnname = "start"; env_set(g, "start", os1);
+    Value os2; os2.type = V_NATIVE; os2.native = b_procs; os2.fnname = "procs"; env_set(g, "procs", os2);
+    Value os3; os3.type = V_NATIVE; os3.native = b_kill; os3.fnname = "kill"; env_set(g, "kill", os3);
+    Value os4; os4.type = V_NATIVE; os4.native = b_sysinfo; os4.fnname = "sysinfo"; env_set(g, "sysinfo", os4);
+    Value os5; os5.type = V_NATIVE; os5.native = b_drives; os5.fnname = "drives"; env_set(g, "drives", os5);
+    Value os6; os6.type = V_NATIVE; os6.native = b_mkdir; os6.fnname = "mkdir"; env_set(g, "mkdir", os6);
+    Value os7; os7.type = V_NATIVE; os7.native = b_rm; os7.fnname = "rm"; env_set(g, "rm", os7);
+    Value os8; os8.type = V_NATIVE; os8.native = b_cp; os8.fnname = "cp"; env_set(g, "cp", os8);
+    Value os9; os9.type = V_NATIVE; os9.native = b_mv; os9.fnname = "mv"; env_set(g, "mv", os9);
+    Value osa; osa.type = V_NATIVE; osa.native = b_msgbox; osa.fnname = "msgbox"; env_set(g, "msgbox", osa);
+    Value osb; osb.type = V_NATIVE; osb.native = b_title; osb.fnname = "title"; env_set(g, "title", osb);
+    Value osc; osc.type = V_NATIVE; osc.native = b_clip_get; osc.fnname = "clip_get"; env_set(g, "clip_get", osc);
+    Value osd; osd.type = V_NATIVE; osd.native = b_clip_set; osd.fnname = "clip_set"; env_set(g, "clip_set", osd);
     /* args — аргументи командного рядка */
     Value av; av.type = V_ARR;
     av.len = g_argc > g_args_start ? g_argc - g_args_start : 0;
@@ -2131,7 +2258,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.14 — мова програмування\n"
+"  Сокіл (Sokil) v2.15 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2447,7 +2574,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.14\n");
+            printf("Sokil v2.15\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
