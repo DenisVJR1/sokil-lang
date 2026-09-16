@@ -248,6 +248,10 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
             while (lx_peek(&lx, 0) != '\n' && lx_peek(&lx, 0) != '\0') lx_adv(&lx);
             continue;
         }
+        if (c == '#') {                             /* коментар # (python-style) */
+            while (lx_peek(&lx, 0) != '\n' && lx_peek(&lx, 0) != '\0') lx_adv(&lx);
+            continue;
+        }
         if (c == '/' && lx_peek(&lx, 1) == '*') {   // блоковий коментар
             lx_adv(&lx); lx_adv(&lx);
             while (1) {
@@ -1178,11 +1182,8 @@ static void exec(Interp *I, Node *n) {
         }
         case N_ASSIGN: {
             Value v = eval(I, n->a);
-            if (!env_assign(I->env, n->str, v)) {
-                char buf[256];
-                snprintf(buf, sizeof buf, "Невідома змінна '%s' (рядок %d)", n->str, n->line);
-                err_raise(I, buf);
-            }
+            if (!env_assign(I->env, n->str, v))
+                env_set(I->env, n->str, v);        /* легкість: авто-оголошення */
             return;
         }
         case N_IDXASSIGN: {
@@ -2049,7 +2050,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.12 — мова програмування\n"
+"  Сокіл (Sokil) v2.13 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2365,7 +2366,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.12\n");
+            printf("Sokil v2.13\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
@@ -2380,6 +2381,12 @@ int main(int argc, char **argv) {
         Arena a = {0};
         int ok;
         char *src = read_file(&a, argv[1], &ok);
+        if (!ok && strlen(argv[1]) > 0) {          /* авто-розширення .sokil */
+            char alt[MAX_PATH];
+            snprintf(alt, sizeof alt, "%s.sokil", argv[1]);
+            src = read_file(&a, alt, &ok);
+            if (ok) argv[1] = alt;
+        }
         if (!ok) {
             fprintf(stderr, "Файл не знайдено: %s\n", argv[1]);
             return 1;

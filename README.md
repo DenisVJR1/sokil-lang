@@ -89,7 +89,7 @@ print('тест ' + 42)       // рядок + число = конкатенац�
 - Об'єкти: `{name: "Іван", age: 25}` — доступ `obj[0]`, `obj[1]`; JSON-сумісні
 - Модулі: `import "файл.sokil"` — виконує файл у поточному середовищі
 - JSON: `json_parse(str)`, `json_stringify(масив_або_значення)`
-- Коментарі: `// рядок` та `/* блок */`
+- Коментарі: `//`, `#` та `/* */`
 - Скорочення: `i++`, `i--`; опційний розділювач `;`
 
 Приклади — у папці `examples/`.
@@ -168,12 +168,14 @@ print('test ' + 42)       // string + number = concatenation
 
 ### Syntax
 
-- Variables: `let x = 42`, `let s = "string"` or `'string'`
+- Variables: `let x = 42`, `let s = "string"` or `'string'`; **assignment auto-declares**: `x = 5` works without `let`
 - Strings: double `"..."` **and single** `'...'` quotes
 - Conditions: `if / elif / else`
 - Loops: `while cond { }`, `for i = 0; i < n; i = i + 1 { }`, `break`, `continue`
 - Functions: `fn name(args) { return ... }` + closures
 - Arrays: `[1,2,3]`, `push`, `pop`, `join`, `split`, indexing
+- Comments: `//`, `#`, `/* */`
+- Run: `sokil file` — `.sokil` extension is optional
 - Built-ins: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid exec http_get download b64_encode b64_decode hex uuid env`
 - Operators: `+ - * / % == != < > <= >= and or not`
 - Ternary: `age >= 18 ? "дорослий" : "малий"`
@@ -183,7 +185,7 @@ print('test ' + 42)       // string + number = concatenation
 - Objects: `{name: "Іван", age: 25}` — access `obj[0]`, `obj[1]`; JSON-compatible
 - Modules: `import "file.sokil"` — runs the file in the current environment
 - JSON: `json_parse(str)`, `json_stringify(array_or_value)`
-- Comments: `// line` and `/* block */`
+- Comments: `//`, `#`, `/* */`
 - Shorthand: `i++`, `i--`; optional `;` separator
 
 Examples in `examples/`.
