@@ -81,6 +81,8 @@ print('тест ' + 42)       // рядок + число = конкатенац�
 - Масиви: `[1,2,3]`, `push`, `pop`, `join`, `split`, індекси
 - Вбудовані: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid`
 - Оператори: `+ - * / % == != < > <= >= and or not`
+- Тернарний: `age >= 18 ? "дорослий" : "малий"`
+- Помилки: `try { ... } catch err { ... }` — `err` — текст помилки (змінна необов'язкова)
 - Складені присвоєння: `x += 1`, `x -= 2`, `x *= 3`, `x /= 4`, `x %= 5`
 - Обхід масивів: `for x in arr { }` (foreach)
 - Об'єкти: `{name: "Іван", age: 25}` — доступ `obj[0]`, `obj[1]`; JSON-сумісні
@@ -172,6 +174,8 @@ print('test ' + 42)       // string + number = concatenation
 - Arrays: `[1,2,3]`, `push`, `pop`, `join`, `split`, indexing
 - Built-ins: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid`
 - Operators: `+ - * / % == != < > <= >= and or not`
+- Ternary: `age >= 18 ? "дорослий" : "малий"`
+- Errors: `try { ... } catch err { ... }` — `err` holds the message (variable optional)
 - Compound assignment: `x += 1`, `x -= 2`, `x *= 3`, `x /= 4`, `x %= 5`
 - Iteration: `for x in arr { }` (foreach)
 - Objects: `{name: "Іван", age: 25}` — access `obj[0]`, `obj[1]`; JSON-compatible

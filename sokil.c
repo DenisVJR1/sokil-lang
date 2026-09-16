@@ -104,12 +104,12 @@ enum {
     T_TRUE, T_FALSE, T_NIL,
     T_LET, T_IF, T_ELIF, T_ELSE, T_WHILE, T_FN, T_RETURN,
     T_FOR, T_BREAK, T_CONTINUE,
-    T_IMPORT, T_IN,
+    T_IMPORT, T_IN, T_TRY, T_CATCH,
     T_AND, T_OR, T_NOT,
     T_PLUS, T_MINUS, T_STAR, T_SLASH, T_PERCENT,
     T_PLUSPLUS, T_MINUSMINUS,
     T_EQ, T_PLUSEQ, T_MINUSEQ, T_STAREQ, T_SLASHEQ, T_PERCENTEQ,
-    T_EQEQ, T_NEQ, T_LT, T_GT, T_LTE, T_GTE, T_BANG,
+    T_EQEQ, T_NEQ, T_LT, T_GT, T_LTE, T_GTE, T_BANG, T_QUESTION,
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE, T_LBRACKET, T_RBRACKET,
     T_COMMA, T_COLON, T_SEMICOLON,
     T_NEWLINE, T_EOF
@@ -120,9 +120,9 @@ typedef struct { int type; double num; char *text; int line; } Token;
 static const char *tok_names[] = {
     "NUM","STR","IDENT","TRUE","FALSE","NIL","LET","IF","ELIF","ELSE",
     "WHILE","FN","RETURN","FOR","BREAK","CONTINUE","AND","OR","NOT",
-    "IMPORT","IN",
+    "IMPORT","IN","TRY","CATCH",
     "PLUS","MINUS","STAR","SLASH","PERCENT","PLUSPLUS","MINUSMINUS",
-    "EQ","PLUSEQ","MINUSEQ","STAREQ","SLASHEQ","PERCENTEQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","LPAREN",
+    "EQ","PLUSEQ","MINUSEQ","STAREQ","SLASHEQ","PERCENTEQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","QUESTION","LPAREN",
     "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","COLON","SEMICOLON","NEWLINE","EOF"
 };
 
@@ -142,7 +142,7 @@ static const struct { const char *kw; int t; } keywords[] = {
     {"while",T_WHILE},{"fn",T_FN},{"return",T_RETURN},
     {"for",T_FOR},{"break",T_BREAK},{"continue",T_CONTINUE},
     {"and",T_AND},{"or",T_OR},{"not",T_NOT},
-    {"import",T_IMPORT},{"in",T_IN},
+    {"import",T_IMPORT},{"in",T_IN},{"try",T_TRY},{"catch",T_CATCH},
     {NULL,0}
 };
 
@@ -285,6 +285,7 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
             case '<': t = T_LT; break;
             case '>': t = T_GT; break;
             case '!': t = T_BANG; break;
+            case '?': t = T_QUESTION; break;
             case '(': t = T_LPAREN; break;
             case ')': t = T_RPAREN; break;
             case '{': t = T_LBRACE; break;
@@ -310,7 +311,7 @@ enum {
     N_NUM, N_STR, N_VAR, N_BOOL, N_NIL, N_ARRAY, N_INDEX, N_IDXASSIGN,
     N_BINOP, N_UNARY, N_ASSIGN, N_LET, N_IF, N_WHILE, N_FN, N_CALL,
     N_RETURN, N_BLOCK, N_FOR, N_BREAK, N_CONTINUE,
-    N_IMPORT, N_FOREACH
+    N_IMPORT, N_FOREACH, N_TERNARY, N_TRY
 };
 
 typedef struct Node Node;
@@ -403,6 +404,19 @@ static Node *pr_import(Parser *p) {
     Token path = pr_expect(p, T_STR);
     Node *n = new_node(p->a, N_IMPORT, line);
     n->str = path.text;
+    return n;
+}
+
+static Node *pr_try(Parser *p) {
+    int line = pr_adv(p).line;                    /* try */
+    Node *n = new_node(p->a, N_TRY, line);
+    n->a = pr_block(p);
+    pr_expect(p, T_CATCH);
+    if (pr_peek(p).type == T_IDENT) {
+        Token v = pr_adv(p);
+        n->str = v.text;
+    }
+    n->b = pr_block(p);
     return n;
 }
 
@@ -511,6 +525,7 @@ static Node *pr_stmt(Parser *p) {
         case T_BREAK:  { int line = pr_adv(p).line; return new_node(p->a, N_BREAK, line); }
         case T_CONTINUE: { int line = pr_adv(p).line; return new_node(p->a, N_CONTINUE, line); }
         case T_IMPORT: return pr_import(p);
+        case T_TRY:    return pr_try(p);
         case T_LBRACE: return pr_block(p);
         case T_NEWLINE:
         case T_SEMICOLON: p->i++; return pr_stmt(p);
@@ -553,7 +568,19 @@ static Node *pr_unary(Parser *p);
 static Node *pr_call(Parser *p);
 static Node *pr_primary(Parser *p);
 
-static Node *pr_expr(Parser *p) { return pr_or(p); }
+static Node *pr_expr(Parser *p) {
+    Node *l = pr_or(p);
+    if (pr_peek(p).type == T_QUESTION) {
+        int line = pr_adv(p).line;                /* ? */
+        Node *n = new_node(p->a, N_TERNARY, line);
+        n->a = l;
+        n->b = pr_expr(p);
+        pr_expect(p, T_COLON);
+        n->c = pr_expr(p);
+        return n;
+    }
+    return l;
+}
 
 static Node *pr_or(Parser *p) {
     Node *l = pr_and(p);
@@ -1088,6 +1115,8 @@ static Value eval(Interp *I, Node *n) {
             if (!strcmp(n->str, "not")) return mk_bool(!truthy(eval(I, n->a)));
             err_raise(I, "Невідома унарна операція");
         }
+        case N_TERNARY:
+            return truthy(eval(I, n->a)) ? eval(I, n->b) : eval(I, n->c);
         case N_BINOP:
             return binop(I, n->str, eval(I, n->a), eval(I, n->b));
         case N_CALL: {
@@ -1295,6 +1324,19 @@ static void exec(Interp *I, Node *n) {
                 Node *stmt = pr_stmt(&p);
                 if (stmt) exec(I, stmt);
                 if (pr_peek(&p).type == T_NEWLINE || pr_peek(&p).type == T_SEMICOLON) pr_adv(&p);
+            }
+            return;
+        }
+        case N_TRY: {
+            jmp_buf saved;
+            memcpy(saved, I->err_jmp, sizeof(jmp_buf));
+            if (setjmp(I->err_jmp) == 0) {
+                exec_block(I, n->a);
+                memcpy(I->err_jmp, saved, sizeof(jmp_buf));
+            } else {
+                memcpy(I->err_jmp, saved, sizeof(jmp_buf));
+                if (n->str) env_set(I->env, n->str, mk_str(a_strdup(I->a, I->errmsg)));
+                exec_block(I, n->b);
             }
             return;
         }
@@ -1894,7 +1936,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.9 — мова програмування\n"
+"  Сокіл (Sokil) v2.10 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2148,7 +2190,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.9\n");
+            printf("Sokil v2.10\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
