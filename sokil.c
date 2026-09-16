@@ -1844,6 +1844,110 @@ static Value b_regex_replace(Interp *I, Value *a, int n) {
     } buf[o] = '\0'; return mk_str(buf);
 }
 
+/* ===== Хакерські інструменти (легкі) ===== */
+static Value b_exec(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "exec(cmd) → вивід команди");
+    FILE *f = popen(a[0].str, "r");
+    if (!f) err_raise(I, "exec: не вдалося запустити");
+    size_t cap = 4096, len = 0;
+    char *buf = (char *)a_alloc(I->a, cap);
+    while (fgets(buf + len, (int)(cap - len), f)) {
+        len += strlen(buf + len);
+        if (cap - len < 256) { cap *= 2; char *nb = (char *)a_alloc(I->a, cap); memcpy(nb, buf, len); buf = nb; }
+    }
+    pclose(f);
+    buf[len] = '\0';
+    return mk_str(buf);
+}
+static Value b_http_get(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "http_get(url) → вміст сторінки");
+    char tmp[MAX_PATH]; GetTempPathA(MAX_PATH, tmp); strcat(tmp, "sokil_http.tmp");
+    if (FAILED(URLDownloadToFileA(NULL, a[0].str, tmp, 0, NULL))) err_raise(I, "http_get: не вдалося завантажити");
+    FILE *f = fopen(tmp, "rb");
+    if (!f) err_raise(I, "http_get: не вдалося прочитати");
+    fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
+    char *buf = (char *)a_alloc(I->a, (size_t)sz + 1);
+    fread(buf, 1, (size_t)sz, f); buf[sz] = '\0'; fclose(f);
+    remove(tmp);
+    return mk_str(buf);
+}
+static Value b_download(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_STR || a[1].type != V_STR) err_raise(I, "download(url, file)");
+    HRESULT hr = URLDownloadToFileA(NULL, a[0].str, a[1].str, 0, NULL);
+    return mk_num(SUCCEEDED(hr));
+}
+static const char b64tab[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static Value b_b64_encode(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "b64_encode(str)");
+    const char *s = a[0].str; size_t in = strlen(s);
+    char *out = (char *)a_alloc(I->a, ((in + 2) / 3) * 4 + 1);
+    size_t o = 0;
+    for (size_t i = 0; i < in; i += 3) {
+        unsigned x = (unsigned char)s[i] << 16;
+        if (i + 1 < in) x |= (unsigned char)s[i + 1] << 8;
+        if (i + 2 < in) x |= (unsigned char)s[i + 2];
+        out[o++] = b64tab[(x >> 18) & 63];
+        out[o++] = b64tab[(x >> 12) & 63];
+        out[o++] = i + 1 < in ? b64tab[(x >> 6) & 63] : '=';
+        out[o++] = i + 2 < in ? b64tab[x & 63] : '=';
+    }
+    out[o] = '\0';
+    return mk_str(out);
+}
+static int b64val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    return c == '+' ? 62 : c == '/' ? 63 : -1;
+}
+static Value b_b64_decode(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "b64_decode(str)");
+    const char *s = a[0].str; size_t in = strlen(s);
+    char *out = (char *)a_alloc(I->a, in + 1);
+    size_t o = 0; unsigned buf = 0; int bits = 0;
+    for (size_t i = 0; i < in; i++) {
+        if (s[i] == '=' || s[i] == '\n' || s[i] == '\r') continue;
+        int v = b64val(s[i]);
+        if (v < 0) err_raise(I, "b64_decode: некоректний символ");
+        buf = (buf << 6) | (unsigned)v; bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out[o++] = (char)((buf >> bits) & 0xff);
+        }
+    }
+    out[o] = '\0';
+    return mk_str(out);
+}
+static Value b_hex(Interp *I, Value *a, int n) {
+    if (n != 1) err_raise(I, "hex(num|str)");
+    if (a[0].type == V_NUM) {
+        char buf[32]; snprintf(buf, sizeof buf, "%llx", (unsigned long long)a[0].num);
+        return mk_str(a_strdup(I->a, buf));
+    }
+    if (a[0].type == V_STR) {
+        const char *s = a[0].str; size_t l = strlen(s);
+        char *out = (char *)a_alloc(I->a, l * 2 + 1);
+        for (size_t i = 0; i < l; i++) snprintf(out + i * 2, 3, "%02x", (unsigned char)s[i]);
+        return mk_str(out);
+    }
+    err_raise(I, "hex(num|str)");
+    return mk_nil();
+}
+static Value b_uuid(Interp *I, Value *a, int n) {
+    (void)I; (void)a; (void)n;
+    char buf[40];
+    snprintf(buf, sizeof buf, "%08x-%04x-%04x-%04x-%012llx",
+             (unsigned)rand() & 0xffffffffu, (unsigned)rand() & 0xffff,
+             ((unsigned)rand() & 0x0fff) | 0x4000, ((unsigned)rand() & 0x3fff) | 0x8000,
+             ((unsigned long long)rand() << 32) ^ (unsigned long long)rand());
+    return mk_str(a_strdup(I->a, buf));
+}
+static Value b_env(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "env(name) → значення або nil");
+    const char *v = getenv(a[0].str);
+    return v ? mk_str(a_strdup(I->a, v)) : mk_nil();
+}
+
 static void install_builtins(Interp *I) {
     Env *g = I->env;
     Value p; p.type = V_NATIVE; p.native = b_print; p.fnname = "print"; env_set(g, "print", p);
@@ -1924,6 +2028,15 @@ static void install_builtins(Interp *I) {
     /* regex */
     Value rm; rm.type = V_NATIVE; rm.native = b_regex_match; rm.fnname = "regex_match"; env_set(g, "regex_match", rm);
     Value rr; rr.type = V_NATIVE; rr.native = b_regex_replace; rr.fnname = "regex_replace"; env_set(g, "regex_replace", rr);
+    /* хакерські */
+    Value xe; xe.type = V_NATIVE; xe.native = b_exec; xe.fnname = "exec"; env_set(g, "exec", xe);
+    Value xg; xg.type = V_NATIVE; xg.native = b_http_get; xg.fnname = "http_get"; env_set(g, "http_get", xg);
+    Value xd; xd.type = V_NATIVE; xd.native = b_download; xd.fnname = "download"; env_set(g, "download", xd);
+    Value xb1; xb1.type = V_NATIVE; xb1.native = b_b64_encode; xb1.fnname = "b64_encode"; env_set(g, "b64_encode", xb1);
+    Value xb2; xb2.type = V_NATIVE; xb2.native = b_b64_decode; xb2.fnname = "b64_decode"; env_set(g, "b64_decode", xb2);
+    Value xh; xh.type = V_NATIVE; xh.native = b_hex; xh.fnname = "hex"; env_set(g, "hex", xh);
+    Value xu; xu.type = V_NATIVE; xu.native = b_uuid; xu.fnname = "uuid"; env_set(g, "uuid", xu);
+    Value xv; xv.type = V_NATIVE; xv.native = b_env; xv.fnname = "env"; env_set(g, "env", xv);
     /* args — аргументи командного рядка */
     Value av; av.type = V_ARR;
     av.len = g_argc > g_args_start ? g_argc - g_args_start : 0;
@@ -1936,7 +2049,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.11 — мова програмування\n"
+"  Сокіл (Sokil) v2.12 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2252,7 +2365,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.11\n");
+            printf("Sokil v2.12\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
