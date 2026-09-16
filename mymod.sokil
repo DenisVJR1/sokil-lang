@@ -1,0 +1,9 @@
+fn greet(name) {
+    return "Привіт, " + name + "!"
+}
+
+let PI = 3.14159
+
+fn circle_area(r) {
+    return PI * r * r
+}

@@ -104,10 +104,12 @@ enum {
     T_TRUE, T_FALSE, T_NIL,
     T_LET, T_IF, T_ELIF, T_ELSE, T_WHILE, T_FN, T_RETURN,
     T_FOR, T_BREAK, T_CONTINUE,
+    T_IMPORT,
     T_AND, T_OR, T_NOT,
     T_PLUS, T_MINUS, T_STAR, T_SLASH, T_PERCENT,
     T_PLUSPLUS, T_MINUSMINUS,
-    T_EQ, T_EQEQ, T_NEQ, T_LT, T_GT, T_LTE, T_GTE, T_BANG,
+    T_EQ, T_PLUSEQ, T_MINUSEQ, T_STAREQ, T_SLASHEQ, T_PERCENTEQ,
+    T_EQEQ, T_NEQ, T_LT, T_GT, T_LTE, T_GTE, T_BANG,
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE, T_LBRACKET, T_RBRACKET,
     T_COMMA, T_SEMICOLON,
     T_NEWLINE, T_EOF
@@ -118,8 +120,9 @@ typedef struct { int type; double num; char *text; int line; } Token;
 static const char *tok_names[] = {
     "NUM","STR","IDENT","TRUE","FALSE","NIL","LET","IF","ELIF","ELSE",
     "WHILE","FN","RETURN","FOR","BREAK","CONTINUE","AND","OR","NOT",
+    "IMPORT",
     "PLUS","MINUS","STAR","SLASH","PERCENT","PLUSPLUS","MINUSMINUS",
-    "EQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","LPAREN",
+    "EQ","PLUSEQ","MINUSEQ","STAREQ","SLASHEQ","PERCENTEQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","LPAREN",
     "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","SEMICOLON","NEWLINE","EOF"
 };
 
@@ -139,6 +142,7 @@ static const struct { const char *kw; int t; } keywords[] = {
     {"while",T_WHILE},{"fn",T_FN},{"return",T_RETURN},
     {"for",T_FOR},{"break",T_BREAK},{"continue",T_CONTINUE},
     {"and",T_AND},{"or",T_OR},{"not",T_NOT},
+    {"import",T_IMPORT},
     {NULL,0}
 };
 
@@ -264,6 +268,11 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
         if (c == '>' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_GTE, 0, NULL)); continue; }
         if (c == '+' && lx_peek(&lx, 1) == '+') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_PLUSPLUS, 0, NULL)); continue; }
         if (c == '-' && lx_peek(&lx, 1) == '-') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_MINUSMINUS, 0, NULL)); continue; }
+        if (c == '+' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_PLUSEQ, 0, NULL)); continue; }
+        if (c == '-' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_MINUSEQ, 0, NULL)); continue; }
+        if (c == '*' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_STAREQ, 0, NULL)); continue; }
+        if (c == '/' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_SLASHEQ, 0, NULL)); continue; }
+        if (c == '%' && lx_peek(&lx, 1) == '=') { lx_adv(&lx); lx_adv(&lx); lx_push(&lx, lx_tok(&lx, T_PERCENTEQ, 0, NULL)); continue; }
 
         int t = 0;
         switch (c) {
@@ -299,7 +308,8 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
 enum {
     N_NUM, N_STR, N_VAR, N_BOOL, N_NIL, N_ARRAY, N_INDEX, N_IDXASSIGN,
     N_BINOP, N_UNARY, N_ASSIGN, N_LET, N_IF, N_WHILE, N_FN, N_CALL,
-    N_RETURN, N_BLOCK, N_FOR, N_BREAK, N_CONTINUE
+    N_RETURN, N_BLOCK, N_FOR, N_BREAK, N_CONTINUE,
+    N_IMPORT
 };
 
 typedef struct Node Node;
@@ -387,6 +397,14 @@ static Node *pr_let(Parser *p) {
     return n;
 }
 
+static Node *pr_import(Parser *p) {
+    int line = pr_adv(p).line;                    /* import */
+    Token path = pr_expect(p, T_STR);
+    Node *n = new_node(p->a, N_IMPORT, line);
+    n->str = path.text;
+    return n;
+}
+
 static Node *pr_if(Parser *p) {
     int line = pr_adv(p).line;                    /* if */
     Node *n = new_node(p->a, N_IF, line);
@@ -439,6 +457,26 @@ static Node *pr_return(Parser *p) {
 }
 
 static Node *pr_expr_stmt(Parser *p) {
+    /* складені присвоєння: x += 1, x -= 2, x *= 3, x /= 4, x %= 5 */
+    if (pr_peek(p).type == T_IDENT && p->i + 1 < p->n) {
+        int t2 = p->toks[p->i + 1].type;
+        const char *op = t2 == T_PLUSEQ ? "+" : t2 == T_MINUSEQ ? "-" :
+                         t2 == T_STAREQ ? "*" : t2 == T_SLASHEQ ? "/" :
+                         t2 == T_PERCENTEQ ? "%" : NULL;
+        if (op) {
+            Token name = p->toks[p->i];
+            p->i += 2;
+            Node *n = new_node(p->a, N_ASSIGN, name.line);
+            n->str = name.text;
+            Node *b = new_node(p->a, N_BINOP, name.line);
+            b->str = (char *)op;
+            b->a = new_node(p->a, N_VAR, name.line);
+            b->a->str = name.text;
+            b->b = pr_expr(p);
+            n->a = b;
+            return n;
+        }
+    }
     Node *e = pr_expr(p);
     if (pr_peek(p).type == T_EQ) {
         if (e->kind == N_VAR) {
@@ -471,6 +509,7 @@ static Node *pr_stmt(Parser *p) {
         case T_RETURN: return pr_return(p);
         case T_BREAK:  { int line = pr_adv(p).line; return new_node(p->a, N_BREAK, line); }
         case T_CONTINUE: { int line = pr_adv(p).line; return new_node(p->a, N_CONTINUE, line); }
+        case T_IMPORT: return pr_import(p);
         case T_LBRACE: return pr_block(p);
         case T_NEWLINE:
         case T_SEMICOLON: p->i++; return pr_stmt(p);
@@ -1169,6 +1208,42 @@ static void exec(Interp *I, Node *n) {
             I->ret_val = n->a ? eval(I, n->a) : mk_nil();
             longjmp(*I->ret_jmp, 1);
         }
+        case N_IMPORT: {
+            const char *path = n->str;
+            char full[MAX_PATH];
+            /* якщо відносний шлях — шукаємо відносно поточного файлу або CWD */
+            if (path[0] != '/' && path[0] != '\\' && (path[1] != ':' || path[0] == '\0')) {
+                GetModuleFileNameA(NULL, full, MAX_PATH);
+                char *sl = strrchr(full, '\\');
+                if (sl) { sl[1] = '\0'; strcat(full, path); }
+                else strcpy(full, path);
+            } else {
+                strcpy(full, path);
+            }
+            FILE *f = fopen(full, "rb");
+            if (!f) {
+                char buf[512];
+                snprintf(buf, sizeof buf, "import: не вдалося відкрити '%s' (рядок %d)", full, n->line);
+                err_raise(I, buf);
+                return;
+            }
+            fseek(f, 0, SEEK_END);
+            long sz = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            char *src = (char *)a_alloc(I->a, (size_t)sz + 1);
+            fread(src, 1, (size_t)sz, f);
+            src[sz] = '\0';
+            fclose(f);
+            int tok_n = 0;
+            Token *toks = lex(I->a, src, &tok_n);
+            Parser p; p.a = I->a; p.toks = toks; p.n = tok_n; p.i = 0;
+            while (pr_peek(&p).type != T_EOF) {
+                Node *stmt = pr_stmt(&p);
+                if (stmt) exec(I, stmt);
+                if (pr_peek(&p).type == T_NEWLINE || pr_peek(&p).type == T_SEMICOLON) pr_adv(&p);
+            }
+            return;
+        }
         case N_BLOCK:
             exec_block(I, n);
             return;
@@ -1577,6 +1652,102 @@ static Value b_system(Interp *I, Value *a, int n) {
 }
 static Value b_pid(Interp *I, Value *a, int n) { (void)I;(void)a;(void)n; return mk_num((double)GetCurrentProcessId()); }
 
+/* ===== JSON (простий парсер) ===== */
+static char *json_skip_ws(char *p) { while (*p==' '||*p=='\t'||*p=='\n'||*p=='\r') p++; return p; }
+static Value json_parse_val(Interp *I, char **pp) {
+    char *p = json_skip_ws(*pp);
+    if (*p == '{') {
+        p++; Value obj; obj.type = V_ARR; obj.len = 0; obj.items = (Value *)a_alloc(I->a, 32 * sizeof(Value)); int cap = 32;
+        while (1) {
+            p = json_skip_ws(p);
+            if (*p == '}') { p++; *pp = p; return obj; }
+            if (*p != '"') err_raise(I, "JSON: очікувався ключ");
+            char *key_start = ++p; while (*p && *p != '"') p++; if (!*p) err_raise(I, "JSON: незакритий ключ");
+            char *key = a_strndup(I->a, key_start, p - key_start); p++;
+            p = json_skip_ws(p); if (*p != ':') err_raise(I, "JSON: очікувалася ':'"); p++;
+            Value v = json_parse_val(I, &p);
+            if (obj.len >= cap) { cap *= 2; Value *new_items = (Value *)a_alloc(I->a, cap * sizeof(Value)); for (int i = 0; i < obj.len; i++) new_items[i] = obj.items[i]; obj.items = new_items; }
+            if (obj.len + 1 >= cap) { cap *= 2; Value *new_items = (Value *)a_alloc(I->a, cap * sizeof(Value)); for (int i = 0; i < obj.len; i++) new_items[i] = obj.items[i]; obj.items = new_items; }
+            obj.items[obj.len++] = mk_str(key); obj.items[obj.len++] = v;
+            p = json_skip_ws(p);
+            if (*p == ',') { p++; continue; }
+            if (*p == '}') { p++; *pp = p; return obj; }
+            err_raise(I, "JSON: очікувалася ',' або '}'");
+        }
+    }
+    if (*p == '[') {
+        p++; Value arr; arr.type = V_ARR; arr.len = 0; arr.items = (Value *)a_alloc(I->a, 32 * sizeof(Value)); int cap = 32;
+        while (1) {
+            p = json_skip_ws(p);
+            if (*p == ']') { p++; *pp = p; return arr; }
+            Value v = json_parse_val(I, &p);
+            if (arr.len >= cap) { cap *= 2; Value *new_items = (Value *)a_alloc(I->a, cap * sizeof(Value)); for (int i = 0; i < arr.len; i++) new_items[i] = arr.items[i]; arr.items = new_items; }
+            arr.items[arr.len++] = v;
+            p = json_skip_ws(p);
+            if (*p == ',') { p++; continue; }
+            if (*p == ']') { p++; *pp = p; return arr; }
+            err_raise(I, "JSON: очікувалася ',' або ']'");
+        }
+    }
+    if (*p == '"') {
+        p++; char *s = p; while (*p && *p != '"') { if (*p == '\\') p++; p++; }
+        char *val = a_strndup(I->a, s, p - s); if (*p == '"') p++; *pp = p; return mk_str(val);
+    }
+    if (*p == 't' && strncmp(p, "true", 4) == 0) { p += 4; *pp = p; return mk_num(1); }
+    if (*p == 'f' && strncmp(p, "false", 5) == 0) { p += 5; *pp = p; return mk_num(0); }
+    if (*p == 'n' && strncmp(p, "null", 4) == 0) { p += 4; *pp = p; return mk_nil(); }
+    char *start = p; while (*p && (isdigit(*p) || *p == '-' || *p == '.' || *p == 'e' || *p == 'E')) p++;
+    char *num = a_strndup(I->a, start, p - start); *pp = p; return mk_num(strtod(num, NULL));
+}
+static Value b_json_parse(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_STR) err_raise(I, "json_parse(str)");
+    char *p = a[0].str; return json_parse_val(I, &p);
+}
+static void json_write_val(Interp *I, Value v, char **out, size_t *len, size_t *cap) {
+    auto void append(const char *s) {
+        size_t l = strlen(s);
+        if (*len + l + 1 >= *cap) { *cap = (*cap ? *cap * 2 : 256); char *new_out = (char *)a_alloc(I->a, *cap); if (*out) memcpy(new_out, *out, *len); *out = new_out; }
+        memcpy(*out + *len, s, l); *len += l; (*out)[*len] = '\0';
+    }
+    if (v.type == V_NIL) { append("null"); return; }
+    if (v.type == V_BOOL) { append(v.num ? "true" : "false"); return; }
+    if (v.type == V_NUM) { char buf[64]; snprintf(buf, sizeof buf, "%g", v.num); append(buf); return; }
+    if (v.type == V_STR) { char *esc = (char *)a_alloc(I->a, strlen(v.str) * 2 + 3); char *d = esc; *d++ = '"'; for (char *s = v.str; *s; s++) { if (*s == '"' || *s == '\\') { *d++ = '\\'; *d++ = *s; } else if (*s == '\n') { *d++ = '\\'; *d++ = 'n'; } else if (*s == '\t') { *d++ = '\\'; *d++ = 't'; } else { *d++ = *s; } } *d++ = '"'; *d = '\0'; append(esc); return; }
+    if (v.type == V_ARR) {
+        if (v.len > 0 && v.items[0].type == V_STR && v.len % 2 == 0) {
+            append("{"); for (int i = 0; i < v.len; i += 2) { if (i) append(","); json_write_val(I, v.items[i], out, len, cap); append(":"); json_write_val(I, v.items[i+1], out, len, cap); } append("}"); return;
+        }
+        append("["); for (int i = 0; i < v.len; i++) { if (i) append(","); json_write_val(I, v.items[i], out, len, cap); } append("]"); return;
+    }
+    append("null");
+}
+static Value b_json_stringify(Interp *I, Value *a, int n) {
+    if (n != 1) err_raise(I, "json_stringify(val)");
+    char *buf = NULL; size_t len = 0, cap = 0;
+    json_write_val(I, a[0], &buf, &len, &cap);
+    Value r = mk_str(buf ? buf : "null");
+    return r;
+}
+
+/* ===== Regex (Windows) ===== */
+static Value b_regex_match(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_STR || a[1].type != V_STR) err_raise(I, "regex_match(pattern, str)");
+    /* simple regex using Windows FindPattern - fallback to strstr for now */
+    const char *pat = a[0].str, *str = a[1].str;
+    if (strstr(str, pat)) return mk_num(1);
+    return mk_num(0);
+}
+static Value b_regex_replace(Interp *I, Value *a, int n) {
+    if (n != 3 || a[0].type != V_STR || a[1].type != V_STR || a[2].type != V_STR) err_raise(I, "regex_replace(pattern, str, repl)");
+    const char *pat = a[0].str, *str = a[1].str, *repl = a[2].str;
+    /* simple strstr replace */
+    size_t cap = strlen(str) * 2 + 1; char *buf = (char *)a_alloc(I->a, cap); size_t o = 0;
+    for (const char *p = str; *p; ) {
+        if (strncmp(p, pat, strlen(pat)) == 0) { memcpy(buf + o, repl, strlen(repl)); o += strlen(repl); p += strlen(pat); }
+        else buf[o++] = *p++;
+    } buf[o] = '\0'; return mk_str(buf);
+}
+
 static void install_builtins(Interp *I) {
     Env *g = I->env;
     Value p; p.type = V_NATIVE; p.native = b_print; p.fnname = "print"; env_set(g, "print", p);
@@ -1651,6 +1822,12 @@ static void install_builtins(Interp *I) {
     /* system */
     Value sys; sys.type = V_NATIVE; sys.native = b_system; sys.fnname = "system"; env_set(g, "system", sys);
     Value pid; pid.type = V_NATIVE; pid.native = b_pid; pid.fnname = "pid"; env_set(g, "pid", pid);
+    /* json */
+    Value jp; jp.type = V_NATIVE; jp.native = b_json_parse; jp.fnname = "json_parse"; env_set(g, "json_parse", jp);
+    Value js; js.type = V_NATIVE; js.native = b_json_stringify; js.fnname = "json_stringify"; env_set(g, "json_stringify", js);
+    /* regex */
+    Value rm; rm.type = V_NATIVE; rm.native = b_regex_match; rm.fnname = "regex_match"; env_set(g, "regex_match", rm);
+    Value rr; rr.type = V_NATIVE; rr.native = b_regex_replace; rr.fnname = "regex_replace"; env_set(g, "regex_replace", rr);
     /* args — аргументи командного рядка */
     Value av; av.type = V_ARR;
     av.len = g_argc > g_args_start ? g_argc - g_args_start : 0;
@@ -1663,7 +1840,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.6 — мова програмування\n"
+"  Сокіл (Sokil) v2.8 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -1917,7 +2094,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.6\n");
+            printf("Sokil v2.8\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */

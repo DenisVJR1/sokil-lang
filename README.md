@@ -81,6 +81,9 @@ print('тест ' + 42)       // рядок + число = конкатенац�
 - Масиви: `[1,2,3]`, `push`, `pop`, `join`, `split`, індекси
 - Вбудовані: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid`
 - Оператори: `+ - * / % == != < > <= >= and or not`
+- Складені присвоєння: `x += 1`, `x -= 2`, `x *= 3`, `x /= 4`, `x %= 5`
+- Модулі: `import "файл.sokil"` — виконує файл у поточному середовищі
+- JSON: `json_parse(str)`, `json_stringify(масив_або_значення)`
 - Коментарі: `// рядок` та `/* блок */`
 - Скорочення: `i++`, `i--`; опційний розділювач `;`
 
@@ -167,6 +170,9 @@ print('test ' + 42)       // string + number = concatenation
 - Arrays: `[1,2,3]`, `push`, `pop`, `join`, `split`, indexing
 - Built-ins: `print input len type str num abs min max floor ceil round sqrt pow range push pop join split exit sleep contains now sort random sin cos tan log exp pi e deg rad map filter reduce reverse shuffle sum slice upper lower trim replace startswith endswith substr is_num is_str is_arr is_bool is_nil is_func read_file write_file append_file exists is_file is_dir list_dir date format_time system pid`
 - Operators: `+ - * / % == != < > <= >= and or not`
+- Compound assignment: `x += 1`, `x -= 2`, `x *= 3`, `x /= 4`, `x %= 5`
+- Modules: `import "file.sokil"` — runs the file in the current environment
+- JSON: `json_parse(str)`, `json_stringify(array_or_value)`
 - Comments: `// line` and `/* block */`
 - Shorthand: `i++`, `i--`; optional `;` separator
 

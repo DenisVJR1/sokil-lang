@@ -1,0 +1,3 @@
+import "mymod.sokil"
+print(greet("Сокіл"))
+print("Площа кола:", circle_area(5))
