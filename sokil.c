@@ -104,14 +104,14 @@ enum {
     T_TRUE, T_FALSE, T_NIL,
     T_LET, T_IF, T_ELIF, T_ELSE, T_WHILE, T_FN, T_RETURN,
     T_FOR, T_BREAK, T_CONTINUE,
-    T_IMPORT,
+    T_IMPORT, T_IN,
     T_AND, T_OR, T_NOT,
     T_PLUS, T_MINUS, T_STAR, T_SLASH, T_PERCENT,
     T_PLUSPLUS, T_MINUSMINUS,
     T_EQ, T_PLUSEQ, T_MINUSEQ, T_STAREQ, T_SLASHEQ, T_PERCENTEQ,
     T_EQEQ, T_NEQ, T_LT, T_GT, T_LTE, T_GTE, T_BANG,
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE, T_LBRACKET, T_RBRACKET,
-    T_COMMA, T_SEMICOLON,
+    T_COMMA, T_COLON, T_SEMICOLON,
     T_NEWLINE, T_EOF
 };
 
@@ -120,10 +120,10 @@ typedef struct { int type; double num; char *text; int line; } Token;
 static const char *tok_names[] = {
     "NUM","STR","IDENT","TRUE","FALSE","NIL","LET","IF","ELIF","ELSE",
     "WHILE","FN","RETURN","FOR","BREAK","CONTINUE","AND","OR","NOT",
-    "IMPORT",
+    "IMPORT","IN",
     "PLUS","MINUS","STAR","SLASH","PERCENT","PLUSPLUS","MINUSMINUS",
     "EQ","PLUSEQ","MINUSEQ","STAREQ","SLASHEQ","PERCENTEQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","LPAREN",
-    "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","SEMICOLON","NEWLINE","EOF"
+    "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","COLON","SEMICOLON","NEWLINE","EOF"
 };
 
 /* ═══════════ Лексер ═══════════ */
@@ -142,7 +142,7 @@ static const struct { const char *kw; int t; } keywords[] = {
     {"while",T_WHILE},{"fn",T_FN},{"return",T_RETURN},
     {"for",T_FOR},{"break",T_BREAK},{"continue",T_CONTINUE},
     {"and",T_AND},{"or",T_OR},{"not",T_NOT},
-    {"import",T_IMPORT},
+    {"import",T_IMPORT},{"in",T_IN},
     {NULL,0}
 };
 
@@ -292,6 +292,7 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
             case '[': t = T_LBRACKET; break;
             case ']': t = T_RBRACKET; break;
             case ',': t = T_COMMA; break;
+            case ':': t = T_COLON; break;
             case ';': t = T_SEMICOLON; break;
             default:
                 fatal_fmt("Невідомий символ '%c' (рядок %d)", c, lx.line);
@@ -309,7 +310,7 @@ enum {
     N_NUM, N_STR, N_VAR, N_BOOL, N_NIL, N_ARRAY, N_INDEX, N_IDXASSIGN,
     N_BINOP, N_UNARY, N_ASSIGN, N_LET, N_IF, N_WHILE, N_FN, N_CALL,
     N_RETURN, N_BLOCK, N_FOR, N_BREAK, N_CONTINUE,
-    N_IMPORT
+    N_IMPORT, N_FOREACH
 };
 
 typedef struct Node Node;
@@ -520,6 +521,15 @@ static Node *pr_stmt(Parser *p) {
 /* for i = 0; i < 10; i = i + 1 { ... } */
 static Node *pr_for(Parser *p) {
     int line = pr_adv(p).line;                    /* for */
+    if (pr_peek(p).type == T_IDENT && p->i + 1 < p->n && p->toks[p->i + 1].type == T_IN) {
+        Token name = p->toks[p->i];
+        p->i += 2;
+        Node *n = new_node(p->a, N_FOREACH, line);
+        n->str = name.text;
+        n->a = pr_expr(p);                        /* колекція */
+        n->c = pr_block(p);                       /* тіло */
+        return n;
+    }
     Node *n = new_node(p->a, N_FOR, line);
     n->a = pr_expr_stmt(p);                       /* ініціалізація */
     pr_expect(p, T_SEMICOLON);
@@ -727,6 +737,28 @@ static Node *pr_primary(Parser *p) {
                 }
             }
             pr_expect(p, T_RBRACKET);
+            return n;
+        }
+        case T_LBRACE: {
+            /* об'єкт {key: value, ...} → плоский парний масив ['key', value, ...] */
+            pr_adv(p);
+            n = new_node(p->a, N_ARRAY, t.line);
+            if (pr_peek(p).type != T_RBRACE) {
+                for (;;) {
+                    Token k = pr_peek(p);
+                    if (k.type != T_STR && k.type != T_IDENT)
+                        pr_err(p, "очікувався ключ об'єкта");
+                    pr_adv(p);
+                    Node *kn = new_node(p->a, N_STR, k.line);
+                    kn->str = k.text;
+                    n_add(p->a, n, kn);
+                    pr_expect(p, T_COLON);
+                    n_add(p->a, n, pr_expr(p));
+                    if (pr_peek(p).type != T_COMMA) break;
+                    pr_adv(p);
+                }
+            }
+            pr_expect(p, T_RBRACE);
             return n;
         }
         default:
@@ -1207,6 +1239,28 @@ static void exec(Interp *I, Node *n) {
                 err_raise(I, "return поза функцією");
             I->ret_val = n->a ? eval(I, n->a) : mk_nil();
             longjmp(*I->ret_jmp, 1);
+        }
+        case N_FOREACH: {
+            Value col = eval(I, n->a);
+            if (col.type != V_ARR) {
+                char buf[256];
+                snprintf(buf, sizeof buf, "for ... in: очікується масив, а не '%s' (рядок %d)",
+                         col.type == V_STR ? "рядок" : col.type == V_NUM ? "число" : col.type == V_BOOL ? "логічне" : "інше", n->line);
+                err_raise(I, buf);
+            }
+            jmp_buf jb; jmp_buf *prev_loop = I->loop_jmp;
+            I->loop_jmp = &jb;
+            for (long long i = 0; i < col.len; i++) {
+                env_set(I->env, n->str, col.items[i]);
+                int sig = setjmp(jb);
+                if (sig == 0) {
+                    exec_block(I, n->c);
+                } else if (I->loop_kind == 1) {
+                    I->loop_kind = 0; break;
+                } else { I->loop_kind = 0; }
+            }
+            I->loop_jmp = prev_loop;
+            return;
         }
         case N_IMPORT: {
             const char *path = n->str;
@@ -1840,7 +1894,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.8 — мова програмування\n"
+"  Сокіл (Sokil) v2.9 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2094,7 +2148,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.8\n");
+            printf("Sokil v2.9\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */

@@ -178,7 +178,7 @@ static void run_program(HWND hw) {
     DWORD cs = GetEnvironmentVariableW(L"COMSPEC", comspec, MAX_PATH);
     if (cs == 0 || cs >= MAX_PATH) wcscpy(comspec, L"C:\\Windows\\System32\\cmd.exe");
     /* простіший формат без зайвих лапок */
-    wsprintfW(desk, L"\"%s\" /c \"%s\" \"%s\" > \"%s\" 2>&1", comspec, sokil, tmp, outfile);
+    wsprintfW(desk, L"\"%s\" /c \"%s\" \"%s\" < nul > \"%s\" 2>&1", comspec, sokil, tmp, outfile);
     STARTUPINFOW si = { sizeof si };
     PROCESS_INFORMATION pi = {0};
     si.dwFlags = STARTF_USESHOWWINDOW;
