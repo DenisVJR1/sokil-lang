@@ -1,4 +1,0 @@
-print(json_parse('{"a":1,"b":[2,3]}'))
-print(json_stringify([1,2,3]))
-print(regex_match("hello", "hello world"))
-print(regex_replace("l", "hello", "X"))
