@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Сокіл — Проста та швидка мова програмування</title>
+<meta name="description" content="Сокіл: нативна мова програмування без залежностей. Власний компілятор, IDE та інсталятор, написані з нуля на чистому C." />
+
+<!-- Google Fonts: Inter (UI/body) + JetBrains Mono (code, technical labels) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Font Awesome (icons) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<!-- Tailwind CSS (Play CDN) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          base: {
+            50:  '#1a2333',
+            100: '#161e2c',
+            200: '#111827', // panel bg
+            300: '#0d1220',
+            400: '#0B0F19', // primary bg
+          },
+          cyan: { glow: '#22D3EE' },
+          gold: { glow: '#F5B942' },
+          azure: { glow: '#3B82F6' },
+        },
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
+
+<!-- Three.js (r128 UMD build) for the floating falcon geometry -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+  :root{ color-scheme: dark; }
+  html, body { background-color: #0B0F19; scroll-behavior: smooth; }
+  body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; overflow-x: hidden; }
+  ::selection { background: rgba(34, 211, 238, 0.35); color: #fff; }
+  a:focus-visible, button:focus-visible { outline: 2px solid #22D3EE; outline-offset: 3px; border-radius: 6px; }
+
+  .grid-backdrop {
+    background-image:
+      linear-gradient(to right, rgba(148,163,184,0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148,163,184,0.06) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 90%);
+  }
+
+  .text-gradient {
+    background: linear-gradient(100deg, #F5F7FA 10%, #22D3EE 45%, #F5B942 85%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glass {
+    background: rgba(17, 24, 39, 0.55);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  .btn-glow {
+    position: relative;
+    background: linear-gradient(120deg, #22D3EE, #3B82F6);
+    box-shadow: 0 0 0 1px rgba(34,211,238,0.25), 0 12px 32px -8px rgba(34,211,238,0.55);
+    transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+  .btn-glow:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(34,211,238,0.4), 0 18px 40px -8px rgba(34,211,238,0.7); }
+  .btn-glow:active { transform: translateY(0); }
+
+  .btn-glass {
+    background: rgba(148, 163, 184, 0.06);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: background 220ms ease, border-color 220ms ease, transform 220ms ease;
+  }
+  .btn-glass:hover { background: rgba(148, 163, 184, 0.12); border-color: rgba(245, 185, 66, 0.4); transform: translateY(-2px); }
+
+  .badge-shine { position: relative; overflow: hidden; }
+  .badge-shine::after {
+    content: "";
+    position: absolute; top: 0; left: -150%; width: 60%; height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,0.18), transparent);
+    animation: shine 5s ease-in-out infinite;
+  }
+  @keyframes shine { 0% { left: -150%; } 45% { left: 150%; } 100% { left: 150%; } }
+
+  .terminal-dot { width: 11px; height: 11px; border-radius: 999px; }
+
+  .caret {
+    display: inline-block; width: 8px; height: 1.1em; background: #22D3EE;
+    margin-left: 2px; vertical-align: text-bottom; animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .feature-card {
+    transition: transform 260ms ease, border-color 260ms ease, background 260ms ease, box-shadow 260ms ease;
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+  .feature-card:hover { border-color: rgba(34, 211, 238, 0.35); background: rgba(17, 24, 39, 0.75); box-shadow: 0 24px 48px -20px rgba(0,0,0,0.55); }
+  .feature-grid { perspective: 1200px; }
+
+  #falcon-canvas { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+
+  .reveal { opacity: 0; transform: translateY(18px); }
+  .reveal.is-in { opacity: 1; transform: translateY(0); transition: opacity 700ms cubic-bezier(0.16,1,0.3,1), transform 700ms cubic-bezier(0.16,1,0.3,1); }
+
+  .fade-section { opacity: 0; transform: translateY(24px); transition: opacity 800ms ease, transform 800ms ease; }
+  .fade-section.is-visible { opacity: 1; transform: translateY(0); }
+
+  /* Language toggle */
+  .lang-toggle { position: relative; display: inline-flex; background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.18); border-radius: 999px; padding: 3px; }
+  .lang-toggle button {
+    position: relative; z-index: 1; padding: 5px 13px; font-size: 12px; font-weight: 600;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 0.02em; color: #94a3b8;
+    border-radius: 999px; transition: color 220ms ease;
+  }
+  .lang-toggle button.is-active { color: #0B0F19; }
+  .lang-toggle .lang-pill {
+    position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+    background: linear-gradient(120deg, #22D3EE, #F5B942);
+    border-radius: 999px; transition: transform 260ms cubic-bezier(0.16,1,0.3,1);
+  }
+  html[lang="en"] .lang-pill { transform: translateX(100%); }
+
+  /* Comparison table */
+  .compare-table th, .compare-table td { padding: 1rem 1.25rem; }
+  .compare-table thead th { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+  .compare-table tbody tr { border-top: 1px solid rgba(148,163,184,0.1); }
+  .compare-table tbody tr:hover { background: rgba(148,163,184,0.04); }
+  .compare-sokil-col { background: rgba(34, 211, 238, 0.055); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .badge-shine::after { animation: none; display: none; }
+    .caret { animation: none; }
+    .reveal, .fade-section { opacity: 1 !important; transform: none !important; transition: none !important; }
+    * { scroll-behavior: auto !important; }
+  }
+
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: #0B0F19; }
+  ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #29344a; }
+</style>
+</head>
+
+<body class="bg-base-400 text-slate-200 antialiased">
+
+<!-- Ambient full-page 3D starfield — sits behind every section -->
+<canvas id="starfield-canvas" class="fixed inset-0 z-0 pointer-events-none"></canvas>
+
+<div class="relative z-10">
+
+<!-- ============================================================= -->
+<!-- NAVIGATION                                                     -->
+<!-- ============================================================= -->
+<header class="fixed top-0 inset-x-0 z-50">
+  <nav class="max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="mt-4 glass rounded-2xl px-5 py-3 flex items-center justify-between gap-4">
+      <a href="#top" class="flex items-center gap-2.5 group shrink-0">
+        <span class="relative flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-glow to-azure-glow">
+          <i class="fa-solid fa-feather-pointed text-[15px] text-base-400"></i>
+        </span>
+        <span class="font-semibold text-white text-[17px] tracking-tight">Сокіл</span>
+      </a>
+
+      <div class="hidden md:flex items-center gap-7 text-sm text-slate-300">
+        <a href="#features" class="hover:text-white transition-colors" data-i18n="nav.features">Можливості</a>
+        <a href="#compare" class="hover:text-white transition-colors" data-i18n="nav.compare">Порівняння</a>
+        <a id="nav-docs-link" href="https://github.com/DenisVJR1/sokil-lang/blob/master/DOCS.md" target="_blank" rel="noopener" class="hover:text-white transition-colors" data-i18n="nav.docs">Документація</a>
+        <a id="nav-github-link" href="https://github.com/DenisVJR1/sokil-lang" target="_blank" rel="noopener" class="hover:text-white transition-colors flex items-center gap-1.5">
+          <i class="fa-brands fa-github"></i> GitHub
+        </a>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div class="lang-toggle" role="group" aria-label="Language">
+          <span class="lang-pill"></span>
+          <button type="button" id="lang-uk" class="is-active" aria-pressed="true">UA</button>
+          <button type="button" id="lang-en" aria-pressed="false">EN</button>
+        </div>
+        <a id="nav-download-link" href="https://github.com/DenisVJR1/sokil-lang/releases" target="_blank" rel="noopener" class="btn-glow text-sm font-semibold text-base-400 px-4 py-2 rounded-xl flex items-center gap-2 whitespace-nowrap">
+          <i class="fa-solid fa-download text-[13px]"></i>
+          <span data-i18n="nav.download">Завантажити</span>
+        </a>
+      </div>
+    </div>
+  </nav>
+</header>
+
+<!-- ============================================================= -->
+<!-- HERO                                                           -->
+<!-- ============================================================= -->
+<section id="top" class="relative pt-40 pb-28 lg:pt-48 lg:pb-36 overflow-hidden">
+  <div class="absolute inset-0 grid-backdrop"></div>
+  <canvas id="falcon-canvas"></canvas>
+
+  <div class="relative z-10 max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="grid lg:grid-cols-[1.05fr,0.95fr] gap-16 items-center">
+
+      <!-- Copy column -->
+      <div>
+        <div class="reveal flex flex-wrap items-center gap-3 mb-7">
+          <div id="version-badge" class="badge-shine inline-flex items-center gap-2 glass rounded-full pl-2 pr-4 py-1.5 text-xs font-mono text-slate-200">
+            <span class="flex h-5 w-5 items-center justify-center rounded-full bg-gold-glow/15">
+              <i class="fa-solid fa-bolt text-gold-glow text-[10px]"></i>
+            </span>
+            <span><span data-i18n="hero.badgeLabel">Найновіша версія:</span> <span id="version-tag" class="text-cyan-glow font-semibold">…</span></span>
+          </div>
+          <div class="inline-flex items-center gap-2 glass rounded-full pl-2 pr-4 py-1.5 text-xs font-mono text-slate-300">
+            <span class="flex h-5 w-5 items-center justify-center rounded-full bg-azure-glow/15">
+              <i class="fa-solid fa-arrows-rotate text-azure-glow text-[10px]"></i>
+            </span>
+            <span data-i18n="hero.updatingBadge">Постійно додаємо нові фічі</span>
+          </div>
+        </div>
+
+        <h1 class="reveal text-[2.6rem] leading-[1.08] sm:text-5xl lg:text-[3.4rem] font-extrabold tracking-tight text-white" data-i18n="hero.title">
+          <span class="text-gradient">Сокіл</span> — проста<br class="hidden sm:block" />
+          та швидка мова<br class="hidden sm:block" />
+          програмування
+        </h1>
+
+        <p class="reveal mt-6 text-lg text-slate-400 max-w-xl leading-relaxed" data-i18n="hero.subtitle">
+          Zero dependencies. 100% власна архітектура. Нативні бінарники, вбудована IDE
+          та інсталятор, створені з нуля на чистому C.
+        </p>
+
+        <div class="reveal mt-9 flex flex-wrap items-center gap-4">
+          <a id="hero-download-link" href="https://github.com/DenisVJR1/sokil-lang/releases" target="_blank" rel="noopener" class="btn-glow inline-flex items-center gap-2.5 text-base font-semibold text-base-400 px-6 py-3.5 rounded-xl">
+            <i class="fa-brands fa-windows text-[16px]"></i>
+            <span data-i18n="hero.downloadBtn">Завантажити для Windows</span>
+          </a>
+          <a id="hero-docs-link" href="https://github.com/DenisVJR1/sokil-lang/blob/master/DOCS.md" target="_blank" rel="noopener" class="btn-glass inline-flex items-center gap-2.5 text-base font-medium text-slate-200 px-6 py-3.5 rounded-xl">
+            <i class="fa-solid fa-book-open text-[15px] text-gold-glow"></i>
+            <span data-i18n="hero.docsBtn">Документація</span>
+          </a>
+        </div>
+
+        <p class="reveal mt-4 text-xs font-mono text-slate-500" id="hero-download-meta" data-i18n="hero.meta">
+          Усі збірки та релізи — на сторінці GitHub Releases.
+        </p>
+      </div>
+
+      <!-- Live code preview -->
+      <div id="preview" class="reveal">
+        <div class="glass rounded-2xl overflow-hidden shadow-2xl shadow-black/40">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-white/5">
+            <div class="flex items-center gap-2">
+              <span class="terminal-dot bg-[#ff5f57]"></span>
+              <span class="terminal-dot bg-[#febc2e]"></span>
+              <span class="terminal-dot bg-[#28c840]"></span>
+            </div>
+            <span class="text-xs font-mono text-slate-500">main.sk</span>
+            <span class="w-[52px]"></span>
+          </div>
+          <pre class="p-5 text-[13px] leading-6 font-mono overflow-x-auto min-h-[320px]"><code id="typewriter-code" class="text-slate-300"></code><span class="caret" id="typewriter-caret"></span></pre>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================= -->
+<!-- FEATURES                                                       -->
+<!-- ============================================================= -->
+<section id="features" class="fade-section relative py-24 lg:py-32">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="max-w-2xl mb-16">
+      <h2 class="text-3xl sm:text-4xl font-bold text-white tracking-tight" data-i18n="features.title">
+        Все, що потрібно компілятору — і нічого зайвого
+      </h2>
+      <p class="mt-4 text-slate-400 text-lg leading-relaxed" data-i18n="features.subtitle">
+        Сокіл будує весь свій інструментарій самостійно: від компілятора до редактора коду,
+        без сторонніх бібліотек чи рантаймів.
+      </p>
+    </div>
+
+    <div class="feature-grid grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+
+      <div class="feature-card glass rounded-2xl p-7">
+        <div class="h-11 w-11 rounded-xl bg-cyan-glow/10 flex items-center justify-center mb-5">
+          <i class="fa-solid fa-microchip text-cyan-glow text-lg"></i>
+        </div>
+        <h3 class="text-white font-semibold text-lg mb-2" data-i18n="features.f1.title">Своя компіляція</h3>
+        <p class="text-slate-400 text-sm leading-relaxed" data-i18n="features.f1.desc">
+          Готовий бінарник не потребує встановленого C-компілятора — Сокіл генерує
+          машинний код самостійно, від початку до кінця.
+        </p>
+      </div>
+
+      <div class="feature-card glass rounded-2xl p-7">
+        <div class="h-11 w-11 rounded-xl bg-gold-glow/10 flex items-center justify-center mb-5">
+          <i class="fa-solid fa-code text-gold-glow text-lg"></i>
+        </div>
+        <h3 class="text-white font-semibold text-lg mb-2" data-i18n="features.f2.title">Власна IDE</h3>
+        <p class="text-slate-400 text-sm leading-relaxed" data-i18n="features.f2.desc">
+          SokilIDE постачається разом з мовою: підсвітка синтаксису, вбудований запуск
+          файлів і жодних додаткових розширень.
+        </p>
+      </div>
+
+      <div class="feature-card glass rounded-2xl p-7">
+        <div class="h-11 w-11 rounded-xl bg-azure-glow/10 flex items-center justify-center mb-5">
+          <i class="fa-solid fa-arrows-rotate text-azure-glow text-lg"></i>
+        </div>
+        <h3 class="text-white font-semibold text-lg mb-2" data-i18n="features.f3.title">Автооновлення та PATH</h3>
+        <p class="text-slate-400 text-sm leading-relaxed" data-i18n="features.f3.desc">
+          Інсталятор самостійно відновлює запис у PATH та перевіряє нові релізи —
+          без ручного налаштування середовища.
+        </p>
+      </div>
+
+      <div class="feature-card glass rounded-2xl p-7">
+        <div class="h-11 w-11 rounded-xl bg-cyan-glow/10 flex items-center justify-center mb-5">
+          <i class="fa-solid fa-cubes-stacked text-cyan-glow text-lg"></i>
+        </div>
+        <h3 class="text-white font-semibold text-lg mb-2" data-i18n="features.f4.title">Нуль залежностей</h3>
+        <p class="text-slate-400 text-sm leading-relaxed" data-i18n="features.f4.desc">
+          Жодних системних бібліотек чи пакетних менеджерів. Один файл — один
+          самодостатній бінарник.
+        </p>
+      </div>
+
+      <div class="feature-card glass rounded-2xl p-7">
+        <div class="h-11 w-11 rounded-xl bg-gold-glow/10 flex items-center justify-center mb-5">
+          <i class="fa-solid fa-gauge-high text-gold-glow text-lg"></i>
+        </div>
+        <h3 class="text-white font-semibold text-lg mb-2" data-i18n="features.f5.title">Швидкість виконання</h3>
+        <p class="text-slate-400 text-sm leading-relaxed" data-i18n="features.f5.desc">
+          Компіляція напряму в нативний код дає продуктивність, близьку до
+          рукописного C, без проміжного рантайму.
+        </p>
+      </div>
+
+      <div class="feature-card glass rounded-2xl p-7">
+        <div class="h-11 w-11 rounded-xl bg-azure-glow/10 flex items-center justify-center mb-5">
+          <i class="fa-solid fa-shield-halved text-azure-glow text-lg"></i>
+        </div>
+        <h3 class="text-white font-semibold text-lg mb-2" data-i18n="features.f6.title">Простий синтаксис</h3>
+        <p class="text-slate-400 text-sm leading-relaxed" data-i18n="features.f6.desc">
+          Мінімалістична граматика без зайвих конструкцій — читається так само
+          легко, як і пишеться.
+        </p>
+      </div>
+
+    </div>
+
+    <div class="mt-10 flex items-center gap-3 text-sm text-slate-400">
+      <i class="fa-solid fa-seedling text-gold-glow"></i>
+      <span data-i18n="features.updatingNote">Список можливостей — не остаточний: ми постійно додаємо нові фічі та покращуємо мову з кожним релізом.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================= -->
+<!-- COMPARISON                                                     -->
+<!-- ============================================================= -->
+<section id="compare" class="fade-section relative py-24 lg:py-32 border-t border-white/5">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8">
+    <div class="max-w-2xl mb-14">
+      <h2 class="text-3xl sm:text-4xl font-bold text-white tracking-tight" data-i18n="compare.title">
+        Сокіл поруч із Python та JavaScript
+      </h2>
+      <p class="mt-4 text-slate-400 text-lg leading-relaxed" data-i18n="compare.subtitle">
+        Три різні підходи до виконання коду — компільований бінарник проти
+        двох популярних інтерпретованих мов.
+      </p>
+    </div>
+
+    <div class="glass rounded-2xl overflow-x-auto">
+      <table class="compare-table w-full text-left text-sm min-w-[640px]">
+        <thead>
+          <tr class="text-slate-400">
+            <th class="w-1/4" data-i18n="compare.col.criteria">Критерій</th>
+            <th class="compare-sokil-col text-cyan-glow w-1/4">Сокіл</th>
+            <th class="w-1/4" data-i18n="compare.col.python">Python</th>
+            <th class="w-1/4" data-i18n="compare.col.js">JavaScript</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-300">
+          <tr>
+            <td class="font-medium text-slate-200" data-i18n="compare.r1.label">Модель виконання</td>
+            <td class="compare-sokil-col font-medium text-white" data-i18n="compare.r1.sokil">Компіляція в нативний код</td>
+            <td data-i18n="compare.r1.python">Інтерпретація байткоду (CPython)</td>
+            <td data-i18n="compare.r1.js">JIT-компіляція в рушії (V8 тощо)</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-slate-200" data-i18n="compare.r2.label">Залежності при запуску</td>
+            <td class="compare-sokil-col font-medium text-white" data-i18n="compare.r2.sokil">Жодних — один бінарник</td>
+            <td data-i18n="compare.r2.python">Потрібен встановлений Python</td>
+            <td data-i18n="compare.r2.js">Потрібен Node.js або браузер</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-slate-200" data-i18n="compare.r3.label">Дистрибуція</td>
+            <td class="compare-sokil-col font-medium text-white" data-i18n="compare.r3.sokil">Компактний нативний .exe</td>
+            <td data-i18n="compare.r3.python">Залежить від пакетів (pip)</td>
+            <td data-i18n="compare.r3.js">Залежить від node_modules</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-slate-200" data-i18n="compare.r4.label">Типізація</td>
+            <td class="compare-sokil-col font-medium text-white" data-i18n="compare.r4.sokil">Статична</td>
+            <td data-i18n="compare.r4.python">Динамічна (опційні type hints)</td>
+            <td data-i18n="compare.r4.js">Динамічна</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-slate-200" data-i18n="compare.r5.label">Швидкість виконання</td>
+            <td class="compare-sokil-col font-medium text-white" data-i18n="compare.r5.sokil">Близька до C</td>
+            <td data-i18n="compare.r5.python">Повільніша через інтерпретацію</td>
+            <td data-i18n="compare.r5.js">Швидка завдяки JIT, повільніша за нативний код</td>
+          </tr>
+          <tr>
+            <td class="font-medium text-slate-200" data-i18n="compare.r6.label">Найкраще для</td>
+            <td class="compare-sokil-col font-medium text-white" data-i18n="compare.r6.sokil">Системних утиліт, нативних інструментів</td>
+            <td data-i18n="compare.r6.python">Скриптів, аналізу даних, прототипів</td>
+            <td data-i18n="compare.r6.js">Веб-інтерфейсів, повносистемних застосунків</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-4 text-xs text-slate-500 font-mono" data-i18n="compare.footnote">
+      Порівняння відображає типові сценарії використання й може змінюватися з розвитком мови.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================= -->
+<!-- CTA / FOOTER                                                   -->
+<!-- ============================================================= -->
+<section class="fade-section relative py-24">
+  <div class="max-w-4xl mx-auto px-6 lg:px-8 text-center">
+    <h2 class="text-3xl sm:text-4xl font-bold text-white tracking-tight mb-5" data-i18n="cta.title">
+      Спробуйте Сокіл сьогодні
+    </h2>
+    <p class="text-slate-400 text-lg mb-9 max-w-xl mx-auto" data-i18n="cta.subtitle">
+      Завантажте останній реліз або перегляньте вихідний код на GitHub.
+    </p>
+    <div class="flex flex-wrap items-center justify-center gap-4">
+      <a id="cta-download-link" href="https://github.com/DenisVJR1/sokil-lang/releases" target="_blank" rel="noopener" class="btn-glow inline-flex items-center gap-2.5 text-base font-semibold text-base-400 px-6 py-3.5 rounded-xl">
+        <i class="fa-solid fa-download text-[15px]"></i>
+        <span data-i18n="cta.downloadBtn">Завантажити останню версію</span>
+      </a>
+      <a id="cta-github-link" href="https://github.com/DenisVJR1/sokil-lang" target="_blank" rel="noopener" class="btn-glass inline-flex items-center gap-2.5 text-base font-medium text-slate-200 px-6 py-3.5 rounded-xl">
+        <i class="fa-brands fa-github text-[16px]"></i>
+        <span data-i18n="cta.githubBtn">Переглянути на GitHub</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer class="relative border-t border-white/5 py-10">
+  <div class="max-w-7xl mx-auto px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div class="flex items-center gap-2.5">
+      <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-glow to-azure-glow">
+        <i class="fa-solid fa-feather-pointed text-[13px] text-base-400"></i>
+      </span>
+      <span class="font-semibold text-slate-300 text-sm">Сокіл</span>
+    </div>
+    <p class="text-slate-500 text-xs font-mono">© <span id="footer-year"></span> Sokil — <span data-i18n="footer.tagline">з нуля на чистому C</span>.</p>
+    <a id="footer-github-link" href="https://github.com/DenisVJR1/sokil-lang" target="_blank" rel="noopener" class="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-2">
+      <i class="fa-brands fa-github"></i> github.com/DenisVJR1/sokil-lang
+    </a>
+  </div>
+</footer>
+
+</div><!-- /.relative.z-10 content wrapper -->
+
+<!-- ============================================================= -->
+<!-- SCRIPT                                                         -->
+<!-- ============================================================= -->
+<script>
+(function () {
+  "use strict";
+
+  /* -----------------------------------------------------------
+   * CONFIGURATION
+   * --------------------------------------------------------- */
+  const GITHUB_REPO = "DenisVJR1/sokil-lang";
+  const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
+  const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.getElementById("footer-year").textContent = new Date().getFullYear();
+
+  /* -----------------------------------------------------------
+   * Fetch the latest GitHub release just to populate the version
+   * badge. Every download button links straight to the Releases
+   * page, per request, regardless of whether this call succeeds.
+   * --------------------------------------------------------- */
+  const versionTagEl = document.getElementById("version-tag");
+
+  fetch(RELEASES_API, { headers: { Accept: "application/vnd.github+json" } })
+    .then((res) => {
+      if (!res.ok) throw new Error(`GitHub API responded with ${res.status}`);
+      return res.json();
+    })
+    .then((release) => {
+      versionTagEl.textContent = release.tag_name || "latest";
+    })
+    .catch(() => {
+      versionTagEl.textContent = "—";
+    });
+
+  /* -----------------------------------------------------------
+   * i18n — Ukrainian / English toggle
+   * --------------------------------------------------------- */
+  const translations = {
+    "nav.features": { uk: "Можливості", en: "Features" },
+    "nav.compare": { uk: "Порівняння", en: "Comparison" },
+    "nav.docs": { uk: "Документація", en: "Docs" },
+    "nav.download": { uk: "Завантажити", en: "Download" },
+
+    "hero.badgeLabel": { uk: "Найновіша версія:", en: "Latest version:" },
+    "hero.updatingBadge": { uk: "Постійно додаємо нові фічі", en: "Constantly shipping new features" },
+    "hero.title": {
+      uk: `<span class="text-gradient">Сокіл</span> — проста<br class="hidden sm:block" />та швидка мова<br class="hidden sm:block" />програмування`,
+      en: `<span class="text-gradient">Sokil</span> — a simple<br class="hidden sm:block" />and fast programming<br class="hidden sm:block" />language`,
+    },
+    "hero.subtitle": {
+      uk: "Zero dependencies. 100% власна архітектура. Нативні бінарники, вбудована IDE та інсталятор, створені з нуля на чистому C.",
+      en: "Zero dependencies. 100% custom architecture. Native binaries, a built-in IDE, and an installer, all built from scratch in plain C.",
+    },
+    "hero.downloadBtn": { uk: "Завантажити для Windows", en: "Download for Windows" },
+    "hero.docsBtn": { uk: "Документація", en: "Documentation" },
+    "hero.meta": { uk: "Усі збірки та релізи — на сторінці GitHub Releases.", en: "All builds and releases live on the GitHub Releases page." },
+
+    "features.title": { uk: "Все, що потрібно компілятору — і нічого зайвого", en: "Everything a compiler needs — and nothing more" },
+    "features.subtitle": {
+      uk: "Сокіл будує весь свій інструментарій самостійно: від компілятора до редактора коду, без сторонніх бібліотек чи рантаймів.",
+      en: "Sokil builds its entire toolchain itself — from the compiler to the code editor — with no third-party libraries or runtimes.",
+    },
+    "features.f1.title": { uk: "Своя компіляція", en: "Self-hosted compilation" },
+    "features.f1.desc": {
+      uk: "Готовий бінарник не потребує встановленого C-компілятора — Сокіл генерує машинний код самостійно, від початку до кінця.",
+      en: "The finished binary needs no installed C compiler — Sokil generates machine code itself, start to finish.",
+    },
+    "features.f2.title": { uk: "Власна IDE", en: "Its own IDE" },
+    "features.f2.desc": {
+      uk: "SokilIDE постачається разом з мовою: підсвітка синтаксису, вбудований запуск файлів і жодних додаткових розширень.",
+      en: "SokilIDE ships alongside the language: syntax highlighting, one-click file execution, and no extra extensions to install.",
+    },
+    "features.f3.title": { uk: "Автооновлення та PATH", en: "Auto-updates & PATH repair" },
+    "features.f3.desc": {
+      uk: "Інсталятор самостійно відновлює запис у PATH та перевіряє нові релізи — без ручного налаштування середовища.",
+      en: "The installer restores your PATH entry and checks for new releases on its own — no manual environment setup.",
+    },
+    "features.f4.title": { uk: "Нуль залежностей", en: "Zero dependencies" },
+    "features.f4.desc": {
+      uk: "Жодних системних бібліотек чи пакетних менеджерів. Один файл — один самодостатній бінарник.",
+      en: "No system libraries or package managers required. One file is one self-contained binary.",
+    },
+    "features.f5.title": { uk: "Швидкість виконання", en: "Runtime speed" },
+    "features.f5.desc": {
+      uk: "Компіляція напряму в нативний код дає продуктивність, близьку до рукописного C, без проміжного рантайму.",
+      en: "Compiling straight to native code gives performance close to hand-written C, with no runtime in between.",
+    },
+    "features.f6.title": { uk: "Простий синтаксис", en: "Simple syntax" },
+    "features.f6.desc": {
+      uk: "Мінімалістична граматика без зайвих конструкцій — читається так само легко, як і пишеться.",
+      en: "A minimal grammar with no extra ceremony — it reads as easily as it's written.",
+    },
+    "features.updatingNote": {
+      uk: "Список можливостей — не остаточний: ми постійно додаємо нові фічі та покращуємо мову з кожним релізом.",
+      en: "This feature list isn't final — we're continuously adding new capabilities and improving the language with every release.",
+    },
+
+    "compare.title": { uk: "Сокіл поруч із Python та JavaScript", en: "Sokil next to Python and JavaScript" },
+    "compare.subtitle": {
+      uk: "Три різні підходи до виконання коду — компільований бінарник проти двох популярних інтерпретованих мов.",
+      en: "Three different approaches to running code — a compiled binary versus two popular interpreted languages.",
+    },
+    "compare.col.criteria": { uk: "Критерій", en: "Criterion" },
+    "compare.col.python": { uk: "Python", en: "Python" },
+    "compare.col.js": { uk: "JavaScript", en: "JavaScript" },
+
+    "compare.r1.label": { uk: "Модель виконання", en: "Execution model" },
+    "compare.r1.sokil": { uk: "Компіляція в нативний код", en: "Compiles to native code" },
+    "compare.r1.python": { uk: "Інтерпретація байткоду (CPython)", en: "Bytecode interpretation (CPython)" },
+    "compare.r1.js": { uk: "JIT-компіляція в рушії (V8 тощо)", en: "JIT-compiled in an engine (V8, etc.)" },
+
+    "compare.r2.label": { uk: "Залежності при запуску", en: "Runtime dependencies" },
+    "compare.r2.sokil": { uk: "Жодних — один бінарник", en: "None — a single binary" },
+    "compare.r2.python": { uk: "Потрібен встановлений Python", en: "Requires an installed Python runtime" },
+    "compare.r2.js": { uk: "Потрібен Node.js або браузер", en: "Requires Node.js or a browser" },
+
+    "compare.r3.label": { uk: "Дистрибуція", en: "Distribution" },
+    "compare.r3.sokil": { uk: "Компактний нативний .exe", en: "Compact native .exe" },
+    "compare.r3.python": { uk: "Залежить від пакетів (pip)", en: "Depends on installed packages (pip)" },
+    "compare.r3.js": { uk: "Залежить від node_modules", en: "Depends on node_modules" },
+
+    "compare.r4.label": { uk: "Типізація", en: "Type system" },
+    "compare.r4.sokil": { uk: "Статична", en: "Static" },
+    "compare.r4.python": { uk: "Динамічна (опційні type hints)", en: "Dynamic (optional type hints)" },
+    "compare.r4.js": { uk: "Динамічна", en: "Dynamic" },
+
+    "compare.r5.label": { uk: "Швидкість виконання", en: "Runtime speed" },
+    "compare.r5.sokil": { uk: "Близька до C", en: "Close to C" },
+    "compare.r5.python": { uk: "Повільніша через інтерпретацію", en: "Slower due to interpretation" },
+    "compare.r5.js": { uk: "Швидка завдяки JIT, повільніша за нативний код", en: "Fast via JIT, slower than native code" },
+
+    "compare.r6.label": { uk: "Найкраще для", en: "Best for" },
+    "compare.r6.sokil": { uk: "Системних утиліт, нативних інструментів", en: "System tools, native utilities" },
+    "compare.r6.python": { uk: "Скриптів, аналізу даних, прототипів", en: "Scripting, data analysis, prototyping" },
+    "compare.r6.js": { uk: "Веб-інтерфейсів, повносистемних застосунків", en: "Web interfaces, full-stack apps" },
+
+    "compare.footnote": {
+      uk: "Порівняння відображає типові сценарії використання й може змінюватися з розвитком мови.",
+      en: "This comparison reflects typical use cases and may change as the language evolves.",
+    },
+
+    "cta.title": { uk: "Спробуйте Сокіл сьогодні", en: "Try Sokil today" },
+    "cta.subtitle": { uk: "Завантажте останній реліз або перегляньте вихідний код на GitHub.", en: "Download the latest release or browse the source on GitHub." },
+    "cta.downloadBtn": { uk: "Завантажити останню версію", en: "Download the latest version" },
+    "cta.githubBtn": { uk: "Переглянути на GitHub", en: "View on GitHub" },
+
+    "footer.tagline": { uk: "з нуля на чистому C", en: "built from scratch in plain C" },
+  };
+
+  const STORAGE_KEY = "sokil-lang-pref";
+  const langButtons = { uk: document.getElementById("lang-uk"), en: document.getElementById("lang-en") };
+
+  function applyLanguage(lang) {
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      const key = el.getAttribute("data-i18n");
+      const entry = translations[key];
+      if (entry && entry[lang] != null) el.innerHTML = entry[lang];
+    });
+    langButtons.uk.classList.toggle("is-active", lang === "uk");
+    langButtons.en.classList.toggle("is-active", lang === "en");
+    langButtons.uk.setAttribute("aria-pressed", String(lang === "uk"));
+    langButtons.en.setAttribute("aria-pressed", String(lang === "en"));
+    try { localStorage.setItem(STORAGE_KEY, lang); } catch (e) { /* storage unavailable — ignore */ }
+  }
+
+  langButtons.uk.addEventListener("click", () => applyLanguage("uk"));
+  langButtons.en.addEventListener("click", () => applyLanguage("en"));
+
+  let initialLang = "uk";
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "uk" || saved === "en") initialLang = saved;
+  } catch (e) { /* storage unavailable — ignore */ }
+  applyLanguage(initialLang);
+
+  /* -----------------------------------------------------------
+   * Reveal-on-load for hero elements (single orchestrated pass)
+   * --------------------------------------------------------- */
+  const revealEls = document.querySelectorAll(".reveal");
+  revealEls.forEach((el, i) => {
+    if (prefersReducedMotion) { el.classList.add("is-in"); return; }
+    setTimeout(() => el.classList.add("is-in"), 120 + i * 110);
+  });
+
+  /* -----------------------------------------------------------
+   * Fade-in sections on scroll
+   * --------------------------------------------------------- */
+  if ("IntersectionObserver" in window && !prefersReducedMotion) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) { entry.target.classList.add("is-visible"); io.unobserve(entry.target); }
+        });
+      },
+      { threshold: 0.12 }
+    );
+    document.querySelectorAll(".fade-section").forEach((el) => io.observe(el));
+  } else {
+    document.querySelectorAll(".fade-section").forEach((el) => el.classList.add("is-visible"));
+  }
+
+  /* -----------------------------------------------------------
+   * Typewriter effect for the code preview panel
+   * (kept language-neutral — Sokil source code, not UI copy)
+   * --------------------------------------------------------- */
+  const codeLines = [
+    { text: "// Модуль підйому — Сокіл виявляє потік і реагує", cls: "text-slate-500" },
+    { text: "func main() -> void {", cls: "text-cyan-glow" },
+    { text: '    let name: string = "Сокіл"', cls: "text-slate-300" },
+    { text: '    print("Політ розпочато, ${name}")', cls: "text-slate-300" },
+    { text: "", cls: "" },
+    { text: "    let speed := calc_dive(320.0)", cls: "text-slate-300" },
+    { text: "    if speed > threshold {", cls: "text-gold-glow" },
+    { text: "        engage_thrusters()", cls: "text-slate-300" },
+    { text: "    }", cls: "text-gold-glow" },
+    { text: "}", cls: "text-cyan-glow" },
+  ];
+
+  const codeEl = document.getElementById("typewriter-code");
+  const caretEl = document.getElementById("typewriter-caret");
+
+  function typewriter() {
+    if (prefersReducedMotion) {
+      codeEl.innerHTML = codeLines.map((l) => `<span class="${l.cls}">${l.text || " "}</span>`).join("\n");
+      caretEl.style.display = "none";
+      return;
+    }
+
+    let lineIdx = 0, charIdx = 0, built = "";
+
+    function step() {
+      if (lineIdx >= codeLines.length) {
+        setTimeout(() => { built = ""; lineIdx = 0; charIdx = 0; codeEl.innerHTML = ""; step(); }, 2200);
+        return;
+      }
+      const line = codeLines[lineIdx];
+      if (charIdx <= line.text.length) {
+        codeEl.innerHTML = built + `<span class="${line.cls}">${line.text.slice(0, charIdx)}</span>`;
+        charIdx++;
+        setTimeout(step, 16 + Math.random() * 22);
+      } else {
+        built += `<span class="${line.cls}">${line.text || " "}</span>\n`;
+        lineIdx++; charIdx = 0;
+        setTimeout(step, 140);
+      }
+    }
+    step();
+  }
+  typewriter();
+
+  /* -----------------------------------------------------------
+   * Three.js — floating low-poly falcon-inspired geometry
+   * with gentle mouse parallax
+   * --------------------------------------------------------- */
+  function initFalconScene() {
+    const canvas = document.getElementById("falcon-canvas");
+    const heroSection = canvas.closest("section");
+    if (!canvas || typeof THREE === "undefined") return;
+
+    let width = heroSection.clientWidth;
+    let height = heroSection.clientHeight;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+    camera.position.set(0, 0, 9);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(width, height);
+
+    const geometry = new THREE.IcosahedronGeometry(2.6, 1);
+    const wireMaterial = new THREE.MeshBasicMaterial({ color: 0xf5b942, wireframe: true, transparent: true, opacity: 0.35 });
+    const wireMesh = new THREE.Mesh(geometry, wireMaterial);
+    wireMesh.position.set(2.6, 0.4, -1.5);
+    scene.add(wireMesh);
+
+    const pointsMaterial = new THREE.PointsMaterial({ color: 0x22d3ee, size: 0.045, transparent: true, opacity: 0.85 });
+    const points = new THREE.Points(geometry, pointsMaterial);
+    points.position.copy(wireMesh.position);
+    scene.add(points);
+
+    // Two orbiting rings — a "compass" motif that reinforces the falcon's
+    // sense of navigation and depth without adding visual noise.
+    const ring1 = new THREE.Mesh(
+      new THREE.TorusGeometry(3.4, 0.018, 8, 96),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.4 })
+    );
+    ring1.position.copy(wireMesh.position);
+    ring1.rotation.x = Math.PI / 2.6;
+    scene.add(ring1);
+
+    const ring2 = new THREE.Mesh(
+      new THREE.TorusGeometry(4.0, 0.014, 8, 96),
+      new THREE.MeshBasicMaterial({ color: 0xf5b942, transparent: true, opacity: 0.3 })
+    );
+    ring2.position.copy(wireMesh.position);
+    ring2.rotation.x = -Math.PI / 3.4;
+    ring2.rotation.y = Math.PI / 6;
+    scene.add(ring2);
+
+    // Fade the whole hero scene out as the visitor scrolls past it, so it
+    // reads as the falcon banking away rather than just disappearing.
+    if (!prefersReducedMotion) {
+      window.addEventListener(
+        "scroll",
+        () => {
+          const heroHeight = heroSection.offsetHeight || 1;
+          const progress = Math.min(window.scrollY / heroHeight, 1);
+          canvas.style.opacity = String(1 - progress * 0.85);
+        },
+        { passive: true }
+      );
+    }
+
+    let targetRotX = 0, targetRotY = 0, currentRotX = 0, currentRotY = 0;
+
+    function onPointerMove(e) {
+      const nx = (e.clientX / window.innerWidth) * 2 - 1;
+      const ny = (e.clientY / window.innerHeight) * 2 - 1;
+      targetRotY = nx * 0.35;
+      targetRotX = ny * 0.25;
+    }
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+
+    function onResize() {
+      width = heroSection.clientWidth;
+      height = heroSection.clientHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    }
+    window.addEventListener("resize", onResize);
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      currentRotX += (targetRotX - currentRotX) * 0.04;
+      currentRotY += (targetRotY - currentRotY) * 0.04;
+      wireMesh.rotation.x = t * 0.08 + currentRotX;
+      wireMesh.rotation.y = t * 0.12 + currentRotY;
+      points.rotation.x = wireMesh.rotation.x;
+      points.rotation.y = wireMesh.rotation.y;
+      wireMesh.position.y = 0.4 + Math.sin(t * 0.5) * 0.15;
+      points.position.y = wireMesh.position.y;
+
+      ring1.position.y = wireMesh.position.y;
+      ring2.position.y = wireMesh.position.y;
+      ring1.rotation.z = t * 0.18 + currentRotY;
+      ring2.rotation.z = -t * 0.12 + currentRotX;
+
+      renderer.render(scene, camera);
+    }
+
+    if (prefersReducedMotion) renderer.render(scene, camera);
+    else animate();
+  }
+
+  /* -----------------------------------------------------------
+   * Three.js — ambient full-page starfield, sitting behind every
+   * section. Slow, low-opacity, and reacts gently to scroll and
+   * the cursor so the whole page — not just the hero — feels
+   * like it has depth.
+   * --------------------------------------------------------- */
+  function initStarfield() {
+    const canvas = document.getElementById("starfield-canvas");
+    if (!canvas || typeof THREE === "undefined") return;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.z = 40;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const STAR_COUNT = 480;
+    const positions = new Float32Array(STAR_COUNT * 3);
+    const colors = new Float32Array(STAR_COUNT * 3);
+    const palette = [
+      [0x22 / 255, 0xd3 / 255, 0xee / 255], // cyan
+      [0xf5 / 255, 0xb9 / 255, 0x42 / 255], // gold
+      [0x3b / 255, 0x82 / 255, 0xf6 / 255], // azure
+    ];
+
+    for (let i = 0; i < STAR_COUNT; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 130;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 130;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 130;
+      const c = palette[Math.floor(Math.random() * palette.length)];
+      colors[i * 3] = c[0];
+      colors[i * 3 + 1] = c[1];
+      colors[i * 3 + 2] = c[2];
+    }
+
+    const starGeometry = new THREE.BufferGeometry();
+    starGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    starGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const starMaterial = new THREE.PointsMaterial({
+      size: 0.35,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.55,
+      sizeAttenuation: true,
+    });
+    const stars = new THREE.Points(starGeometry, starMaterial);
+    scene.add(stars);
+
+    let scrollY = window.scrollY;
+    let mouseX = 0, mouseY = 0;
+
+    window.addEventListener("scroll", () => { scrollY = window.scrollY; }, { passive: true });
+    window.addEventListener(
+      "pointermove",
+      (e) => {
+        mouseX = e.clientX / window.innerWidth - 0.5;
+        mouseY = e.clientY / window.innerHeight - 0.5;
+      },
+      { passive: true }
+    );
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      stars.rotation.y = t * 0.015 + mouseX * 0.12;
+      stars.rotation.x = mouseY * 0.08;
+      camera.position.z = 40 - Math.min(scrollY * 0.01, 14);
+      renderer.render(scene, camera);
+    }
+
+    if (prefersReducedMotion) renderer.render(scene, camera);
+    else animate();
+  }
+
+  /* -----------------------------------------------------------
+   * Feature cards — subtle 3D tilt that follows the cursor, in
+   * the vein of Stripe/Vercel product cards. Triggered only by
+   * the user's own pointer, so it stays within "motion that
+   * answers an action" rather than looping on its own.
+   * --------------------------------------------------------- */
+  function initCardTilt() {
+    if (prefersReducedMotion) return;
+    const cards = document.querySelectorAll(".feature-card");
+
+    cards.forEach((card) => {
+      let raf = null;
+
+      function handleMove(e) {
+        const rect = card.getBoundingClientRect();
+        const px = (e.clientX - rect.left) / rect.width;
+        const py = (e.clientY - rect.top) / rect.height;
+        const rotateY = (px - 0.5) * 10;
+        const rotateX = (0.5 - py) * 10;
+
+        if (raf) cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          card.style.transform = `perspective(900px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-6px) translateZ(0)`;
+        });
+      }
+
+      function reset() {
+        if (raf) cancelAnimationFrame(raf);
+        card.style.transform = "perspective(900px) rotateX(0deg) rotateY(0deg) translateY(0) translateZ(0)";
+      }
+
+      card.addEventListener("pointermove", handleMove);
+      card.addEventListener("pointerleave", reset);
+    });
+  }
+
+  if (typeof THREE !== "undefined") {
+    initFalconScene();
+    initStarfield();
+  }
+  initCardTilt();
+})();
+</script>
+
+</body>
+</html>
