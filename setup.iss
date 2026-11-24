@@ -5,8 +5,9 @@
 
 [Setup]
 AppName=Сокіл (Sokil)
-AppVersion=1.0
+AppVersion=2.18
 AppPublisher=Sokil
+PrivilegesRequired=admin
 DefaultDirName={localappdata}\Sokil
 DefaultGroupName=Сокіл
 DisableProgramGroupPage=yes

@@ -45,7 +45,7 @@ static HBRUSH hbrCard, hbrSurface;
 static wchar_t statusTxt[512];
 static int g_page = 0;
 static int g_anim = 0;
-static wchar_t CUR_VER[] = L"2.17";
+static wchar_t CUR_VER[] = L"2.18";
 
 #define MAX_VER 16
 static wchar_t ver_urls[MAX_VER][768];
@@ -78,45 +78,99 @@ static const wchar_t *BG_CODE[] = {
 static void notify_env(void);
 
 /* ── PATH ── */
-static void path_add(void) {
-    DWORD sz = 32767;
-    wchar_t *old = (wchar_t *)malloc(sz * sizeof(wchar_t));
-    if (!old) return;
-    LONG r = RegGetValueW(HKEY_CURRENT_USER, L"Environment", L"Path",
-                          RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, NULL, old, &sz);
-    if (r != ERROR_SUCCESS) { wcscpy(old, L"%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps"); }
-    if (wcsstr(old, APP_DIR) != NULL) { free(old); return; }
-    /* normalize: strip leading/trailing ';' */
-    wchar_t *p = old;
-    while (*p == L';') p++;
-    size_t len = wcslen(p);
-    while (len && p[len - 1] == L';') p[--len] = 0;
-    if (len == 0) wcscpy(p, L"%USERPROFILE%\\AppData\\Local\\Microsoft\\WindowsApps");
-    size_t n = wcslen(p) + wcslen(APP_DIR) + 2;
-    wchar_t *nw = (wchar_t *)malloc(n * sizeof(wchar_t));
-    if (!nw) { free(old); return; }
-    wsprintfW(nw, L"%s;%s", p, APP_DIR);
-    RegSetKeyValueW(HKEY_CURRENT_USER, L"Environment", L"Path", REG_EXPAND_SZ, nw, (DWORD)((wcslen(nw)+1)*sizeof(wchar_t)));
-    free(nw); free(old);
-    notify_env();
+static BOOL path_entry_equal(const wchar_t *entry, size_t len, const wchar_t *target) {
+    while (len && (*entry == L' ' || *entry == L'\t' || *entry == L'"')) { entry++; len--; }
+    while (len && (entry[len - 1] == L' ' || entry[len - 1] == L'\t' || entry[len - 1] == L'"')) len--;
+    while (len > 3 && (entry[len - 1] == L'\\' || entry[len - 1] == L'/')) len--;
+    size_t tl = wcslen(target);
+    while (tl > 3 && (target[tl - 1] == L'\\' || target[tl - 1] == L'/')) tl--;
+    return len == tl && _wcsnicmp(entry, target, len) == 0;
 }
-static void path_remove(void) {
-    DWORD sz = 32767;
-    wchar_t *old = (wchar_t *)malloc(sz * sizeof(wchar_t));
-    if (!old) return;
-    LONG r = RegGetValueW(HKEY_CURRENT_USER, L"Environment", L"Path",
-                          RRF_RT_REG_EXPAND_SZ | RRF_RT_REG_SZ, NULL, old, &sz);
-    if (r != ERROR_SUCCESS) { free(old); return; }
-    wchar_t *hit = wcsstr(old, APP_DIR);
-    if (hit) {
-        wchar_t *sep = hit - 1;
-        if (sep >= old && *sep == L';')
-            memmove(sep, hit + wcslen(APP_DIR), (wcslen(hit + wcslen(APP_DIR)) + 1) * sizeof(wchar_t));
-        else
-            memmove(hit, hit + wcslen(APP_DIR), (wcslen(hit + wcslen(APP_DIR)) + 1) * sizeof(wchar_t));
-        RegSetKeyValueW(HKEY_CURRENT_USER, L"Environment", L"Path", REG_EXPAND_SZ, old, (DWORD)((wcslen(old)+1)*sizeof(wchar_t)));
+static BOOL path_has_entry(const wchar_t *path, const wchar_t *target) {
+    const wchar_t *start = path;
+    for (const wchar_t *p = path; ; p++) {
+        if (*p == L';' || *p == L'\0') {
+            if (path_entry_equal(start, (size_t)(p - start), target)) return TRUE;
+            if (*p == L'\0') break;
+            start = p + 1;
+        }
+    }
+    return FALSE;
+}
+static BOOL path_update_root(HKEY root, BOOL add) {
+    HKEY env;
+    if (RegCreateKeyExW(root, L"Environment", 0, NULL, 0,
+                        KEY_QUERY_VALUE | KEY_SET_VALUE, NULL, &env, NULL) != ERROR_SUCCESS)
+        return FALSE;
+
+    DWORD type = 0, bytes = 0;
+    LONG r = RegQueryValueExW(env, L"Path", NULL, &type, NULL, &bytes);
+    if (r != ERROR_SUCCESS && r != ERROR_FILE_NOT_FOUND) {
+        RegCloseKey(env);
+        return FALSE;
+    }
+    DWORD cap = bytes > 0 ? bytes + sizeof(wchar_t) : 2 * sizeof(wchar_t);
+    wchar_t *old = (wchar_t *)calloc(1, cap);
+    if (!old) { RegCloseKey(env); return FALSE; }
+    if (bytes > 0 && RegQueryValueExW(env, L"Path", NULL, &type, (LPBYTE)old, &cap) != ERROR_SUCCESS) {
+        free(old); RegCloseKey(env); return FALSE;
+    }
+
+    size_t old_len = wcslen(old), app_len = wcslen(APP_DIR);
+    if (add) {
+        if (path_has_entry(old, APP_DIR)) {
+            free(old); RegCloseKey(env); return TRUE;
+        }
+        size_t total = old_len + (old_len ? 1 : 0) + app_len + 1;
+        wchar_t *updated = (wchar_t *)malloc(total * sizeof(wchar_t));
+        if (!updated) { free(old); RegCloseKey(env); return FALSE; }
+        wsprintfW(updated, old_len ? L"%s;%s" : L"%s", old, APP_DIR);
+        r = RegSetValueExW(env, L"Path", 0, REG_EXPAND_SZ, (const BYTE *)updated,
+                            (DWORD)((wcslen(updated) + 1) * sizeof(wchar_t)));
+        free(updated);
+    } else {
+        wchar_t *updated = (wchar_t *)malloc((old_len + 1) * sizeof(wchar_t));
+        if (!updated) { free(old); RegCloseKey(env); return FALSE; }
+        updated[0] = L'\0';
+        const wchar_t *start = old;
+        for (const wchar_t *p = old; ; p++) {
+            if (*p == L';' || *p == L'\0') {
+                size_t len = (size_t)(p - start);
+                if (!path_entry_equal(start, len, APP_DIR)) {
+                    if (updated[0]) wcscat(updated, L";");
+                    wcsncat(updated, start, len);
+                }
+                if (*p == L'\0') break;
+                start = p + 1;
+            }
+        }
+        r = RegSetValueExW(env, L"Path", 0, REG_EXPAND_SZ, (const BYTE *)updated,
+                            (DWORD)((wcslen(updated) + 1) * sizeof(wchar_t)));
+        free(updated);
+    }
+    BOOL ok = r == ERROR_SUCCESS;
+    if (ok && add) {
+        DWORD verify_bytes = 32768 * sizeof(wchar_t);
+        wchar_t *verify = (wchar_t *)calloc(1, verify_bytes);
+        ok = verify && RegQueryValueExW(env, L"Path", NULL, &type, (LPBYTE)verify, &verify_bytes) == ERROR_SUCCESS &&
+             path_has_entry(verify, APP_DIR);
+        free(verify);
     }
     free(old);
+    RegCloseKey(env);
+    return ok;
+}
+static BOOL path_add(void) {
+    /* Prefer the current user's PATH; elevated installers can fall back to the machine PATH. */
+    BOOL ok = path_update_root(HKEY_CURRENT_USER, TRUE);
+    if (!ok) ok = path_update_root(HKEY_LOCAL_MACHINE, TRUE);
+    if (ok) notify_env();
+    return ok;
+}
+static void path_remove(void) {
+    path_update_root(HKEY_CURRENT_USER, FALSE);
+    path_update_root(HKEY_LOCAL_MACHINE, FALSE);
+    notify_env();
 }
 static void notify_env(void) {
     SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, (LPARAM)L"Environment",
@@ -182,7 +236,7 @@ static BOOL do_install(int patch, int version) {
     /* SokilIDE.exe — завжди з вбудованого */
     write_bytes(ide, sokil_ide_data, sokil_ide_len);
 
-    if (patch) path_add();
+    if (patch && !path_add()) return FALSE;
     assoc_add(exe);
     return TRUE;
 }
@@ -575,7 +629,7 @@ int wmain(void) {
         int code;
         if (!wcscmp(argv[1], L"--install"))      code = do_install(1, 0) ? 0 : 1;
         else if (!wcscmp(argv[1], L"--uninstall")) code = do_uninstall() ? 0 : 1;
-        else if (!wcscmp(argv[1], L"--version")) { printf("Sokil Setup v%s\n", "2.17"); return 0; }
+        else if (!wcscmp(argv[1], L"--version")) { printf("Sokil Setup v%s\n", "2.18"); return 0; }
         else if (!wcscmp(argv[1], L"--path"))    { printf("%S\n", APP_DIR); return 0; }
         else return 1;
         LocalFree(argv);

@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag to upload
         required: true
-        default: v2.17
+        default: v2.18
 
 permissions:
   contents: write
@@ -30,8 +30,27 @@ jobs:
         shell: bash
         run: gcc -O2 -std=c99 -o sokil.exe sokil.c -lurlmon -ladvapi32 -luser32 -lshell32
 
+      - name: Embed Sokil and build installer
+        shell: pwsh
+        run: |
+          $bytes = [IO.File]::ReadAllBytes("sokil.exe")
+          $writer = New-Object IO.StreamWriter("sokil_exe.h", $false, [Text.Encoding]::ASCII)
+          $writer.WriteLine("static const unsigned char sokil_exe_data[] = {")
+          for ($i = 0; $i -lt $bytes.Length; $i += 20) {
+            $end = [Math]::Min($i + 20, $bytes.Length)
+            $values = for ($j = $i; $j -lt $end; $j++) { "0x{0:X2}" -f $bytes[$j] }
+            $writer.WriteLine(($values -join ",") + ",")
+          }
+          $writer.WriteLine("};")
+          $writer.WriteLine("static const unsigned int sokil_exe_len = $($bytes.Length);")
+          $writer.Close()
+          windres installer.rc installer.res
+          gcc -O2 -municode -mwindows -o Sokil-Setup.exe installer.c installer.res -ldwmapi -lshell32 -lurlmon -lole32 -lcomctl32 -lgdi32 -luser32 -ladvapi32
+
       - name: Upload executable
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
-          files: sokil.exe
+          files: |
+            sokil.exe
+            Sokil-Setup.exe
