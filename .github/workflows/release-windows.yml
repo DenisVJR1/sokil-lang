@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag to upload
         required: true
-        default: v2.20
+        default: v2.21
 
 permissions:
   contents: write
@@ -29,6 +29,10 @@ jobs:
       - name: Build Sokil
         shell: bash
         run: gcc -O2 -std=c99 -o sokil.exe sokil.c -lurlmon -ladvapi32 -luser32 -lshell32
+
+      - name: Build Sokil IDE
+        shell: bash
+        run: gcc -O2 -mwindows -o SokilIDE.exe ide.c -lcomdlg32 -lcomctl32 -luser32 -lgdi32
 
       - name: Test aliased modules
         shell: pwsh
@@ -54,10 +58,48 @@ jobs:
           windres installer.rc installer.o
           gcc -O2 -municode -mwindows -o Sokil-Setup.exe installer.c installer.o -ldwmapi -lshell32 -lurlmon -lole32 -lcomctl32 -lgdi32 -luser32 -ladvapi32
 
+      - name: Build MSIX package
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { $version = '2.21.0' }
+          $msixVersion = "$version.0"
+          $packageRoot = Join-Path $env:RUNNER_TEMP 'sokil-msix'
+          New-Item -ItemType Directory -Force -Path "$packageRoot\Assets" | Out-Null
+          Copy-Item sokil.exe, SokilIDE.exe "$packageRoot\"
+          Copy-Item store\AppxManifest.xml "$packageRoot\AppxManifest.xml"
+          $manifest = Get-Content "$packageRoot\AppxManifest.xml" -Raw
+          $manifest = $manifest -replace 'Version="2\.21\.0\.0"', "Version=`"$msixVersion`""
+          Set-Content -Path "$packageRoot\AppxManifest.xml" -Value $manifest -Encoding utf8
+
+          Add-Type -AssemblyName System.Drawing
+          $bitmap = New-Object System.Drawing.Bitmap 256, 256
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.Clear([System.Drawing.Color]::FromArgb(24, 24, 27))
+          $font = New-Object System.Drawing.Font('Arial', 112, [System.Drawing.FontStyle]::Bold)
+          $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 230, 160))
+          $graphics.DrawString('S', $font, $brush, 68, 48)
+          $bitmap.Save("$packageRoot\Assets\logo.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $font.Dispose()
+          $brush.Dispose()
+          $bitmap.Dispose()
+
+          $makeAppx = Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\bin\*\x64\makeappx.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeAppx) { throw 'Windows SDK makeappx.exe was not found' }
+          & $makeAppx.FullName pack /d $packageRoot /p "$env:GITHUB_WORKSPACE\Sokil-Lang.msix" /o
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          & $makeAppx.FullName validate /p "$env:GITHUB_WORKSPACE\Sokil-Lang.msix"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload executable
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
           files: |
             sokil.exe
+            SokilIDE.exe
             Sokil-Setup.exe
+            Sokil-Lang.msix

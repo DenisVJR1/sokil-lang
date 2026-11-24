@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap uap5 desktop">
+  <Identity
+    Name="VJRStudio.SokilLang"
+    Publisher="CN=B69EE5FE-9D6C-44AB-8A77-45EBB7290450"
+    Version="2.21.0.0"
+    ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Sokil Lang</DisplayName>
+    <PublisherDisplayName>VJR Studio</PublisherDisplayName>
+    <Description>Sokil programming language and IDE</Description>
+    <Logo>Assets\logo.png</Logo>
+  </Properties>
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+  <Applications>
+    <Application
+      Id="Sokil"
+      Executable="sokil.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        AppListEntry="none"
+        DisplayName="Sokil"
+        Description="Sokil programming language"
+        Square150x150Logo="Assets\logo.png"
+        Square44x44Logo="Assets\logo.png" />
+      <uap5:Extension Category="windows.appExecutionAlias">
+        <uap5:AppExecutionAlias desktop:Subsystem="console">
+          <desktop:ExecutionAlias Alias="sokil.exe" />
+        </uap5:AppExecutionAlias>
+      </uap5:Extension>
+    </Application>
+    <Application
+      Id="SokilIDE"
+      Executable="SokilIDE.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Sokil IDE"
+        Description="Sokil programming language IDE"
+        Square150x150Logo="Assets\logo.png"
+        Square44x44Logo="Assets\logo.png" />
+    </Application>
+  </Applications>
+  <Capabilities>
+    <Capability Name="internetClient" />
+  </Capabilities>
+</Package>
