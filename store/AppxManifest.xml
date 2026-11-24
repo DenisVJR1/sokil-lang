@@ -28,6 +28,7 @@
         AppListEntry="none"
         DisplayName="Sokil"
         Description="Sokil programming language"
+        BackgroundColor="#18181B"
         Square150x150Logo="Assets\logo.png"
         Square44x44Logo="Assets\logo.png" />
       <uap5:Extension Category="windows.appExecutionAlias">
@@ -43,6 +44,7 @@
       <uap:VisualElements
         DisplayName="Sokil IDE"
         Description="Sokil programming language IDE"
+        BackgroundColor="#18181B"
         Square150x150Logo="Assets\logo.png"
         Square44x44Logo="Assets\logo.png" />
     </Application>
