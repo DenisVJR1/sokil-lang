@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag to upload
         required: true
-        default: v2.19
+        default: v2.20
 
 permissions:
   contents: write
@@ -29,6 +29,13 @@ jobs:
       - name: Build Sokil
         shell: bash
         run: gcc -O2 -std=c99 -o sokil.exe sokil.c -lurlmon -ladvapi32 -luser32 -lshell32
+
+      - name: Test aliased modules
+        shell: pwsh
+        run: |
+          Set-Content -Path math.sokil -Value 'fn square(x) { return x * x }'
+          $output = & .\sokil.exe -e 'import "math.sokil" as math; print(math.square(5)); print(type(math))'
+          if (($output -join "`n") -notmatch '25' -or ($output -join "`n") -notmatch 'модуль') { exit 1 }
 
       - name: Embed Sokil and build installer
         shell: pwsh

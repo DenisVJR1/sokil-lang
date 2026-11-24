@@ -88,7 +88,7 @@ print('тест ' + 42)       // рядок + число = конкатенац�
 - Складені присвоєння: `x += 1`, `x -= 2`, `x *= 3`, `x /= 4`, `x %= 5`
 - Обхід масивів: `for x in arr { }` (foreach)
 - Об'єкти: `{name: "Іван", age: 25}` — доступ `obj[0]`, `obj[1]`; JSON-сумісні
-- Модулі: `import "файл.sokil"` — виконує файл у поточному середовищі
+- Модулі: `import "файл.sokil"` або `import "math.sokil" as math` — ізольований модуль із доступом `math.fn()`
 - JSON: `json_parse(str)`, `json_stringify(масив_або_значення)`
 - Коментарі: `//`, `#` та `/* */`
 - Скорочення: `i++`, `i--`; опційний розділювач `;`
@@ -185,7 +185,7 @@ print('test ' + 42)       // string + number = concatenation
 - Compound assignment: `x += 1`, `x -= 2`, `x *= 3`, `x /= 4`, `x %= 5`
 - Iteration: `for x in arr { }` (foreach)
 - Objects: `{name: "Іван", age: 25}` — access `obj[0]`, `obj[1]`; JSON-compatible
-- Modules: `import "file.sokil"` — runs the file in the current environment
+- Modules: `import "file.sokil"` or `import "math.sokil" as math` — isolated modules accessed as `math.fn()`
 - JSON: `json_parse(str)`, `json_stringify(array_or_value)`
 - Comments: `//`, `#`, `/* */`
 - Shorthand: `i++`, `i--`; optional `;` separator

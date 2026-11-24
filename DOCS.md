@@ -219,6 +219,21 @@ print(args)      // ["one", "two", "three"]
 print(args[0])   // "one"
 ```
 
+### Модулі
+
+Старий синтаксис імпорту без псевдоніма залишається сумісним:
+```sokil
+import "config.sokil"
+print(app_name)
+```
+
+Для ізольованого модуля використовуйте `as`. Усі його верхньорівневі змінні та функції доступні через псевдонім:
+```sokil
+import "math.sokil" as math
+print(math.square(5))
+print(math["pi"])
+```
+
 ### Випадкові числа
 ```sokil
 print(random())       // double 0.0 .. 1.0

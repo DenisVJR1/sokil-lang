@@ -105,14 +105,14 @@ enum {
     T_TRUE, T_FALSE, T_NIL,
     T_LET, T_IF, T_ELIF, T_ELSE, T_WHILE, T_FN, T_RETURN,
     T_FOR, T_BREAK, T_CONTINUE,
-    T_IMPORT, T_IN, T_TRY, T_CATCH,
+    T_IMPORT, T_AS, T_IN, T_TRY, T_CATCH,
     T_AND, T_OR, T_NOT,
     T_PLUS, T_MINUS, T_STAR, T_SLASH, T_PERCENT,
     T_PLUSPLUS, T_MINUSMINUS,
     T_EQ, T_PLUSEQ, T_MINUSEQ, T_STAREQ, T_SLASHEQ, T_PERCENTEQ,
     T_EQEQ, T_NEQ, T_LT, T_GT, T_LTE, T_GTE, T_BANG, T_QUESTION,
     T_LPAREN, T_RPAREN, T_LBRACE, T_RBRACE, T_LBRACKET, T_RBRACKET,
-    T_COMMA, T_COLON, T_SEMICOLON,
+    T_COMMA, T_COLON, T_DOT, T_SEMICOLON,
     T_NEWLINE, T_EOF
 };
 
@@ -121,10 +121,10 @@ typedef struct { int type; double num; char *text; int line; } Token;
 static const char *tok_names[] = {
     "NUM","STR","IDENT","TRUE","FALSE","NIL","LET","IF","ELIF","ELSE",
     "WHILE","FN","RETURN","FOR","BREAK","CONTINUE","AND","OR","NOT",
-    "IMPORT","IN","TRY","CATCH",
+    "IMPORT","AS","IN","TRY","CATCH",
     "PLUS","MINUS","STAR","SLASH","PERCENT","PLUSPLUS","MINUSMINUS",
     "EQ","PLUSEQ","MINUSEQ","STAREQ","SLASHEQ","PERCENTEQ","EQEQ","NEQ","LT","GT","LTE","GTE","BANG","QUESTION","LPAREN",
-    "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","COLON","SEMICOLON","NEWLINE","EOF"
+    "RPAREN","LBRACE","RBRACE","LBRACKET","RBRACKET","COMMA","COLON","DOT","SEMICOLON","NEWLINE","EOF"
 };
 
 /* ═══════════ Лексер ═══════════ */
@@ -143,7 +143,7 @@ static const struct { const char *kw; int t; } keywords[] = {
     {"while",T_WHILE},{"fn",T_FN},{"return",T_RETURN},
     {"for",T_FOR},{"break",T_BREAK},{"continue",T_CONTINUE},
     {"and",T_AND},{"or",T_OR},{"not",T_NOT},
-    {"import",T_IMPORT},{"in",T_IN},{"try",T_TRY},{"catch",T_CATCH},
+    {"import",T_IMPORT},{"as",T_AS},{"in",T_IN},{"try",T_TRY},{"catch",T_CATCH},
     {NULL,0}
 };
 
@@ -300,6 +300,7 @@ static Token *lex(Arena *a, const char *src, int *out_n) {
             case ',': t = T_COMMA; break;
             case ':': t = T_COLON; break;
             case ';': t = T_SEMICOLON; break;
+            case '.': t = T_DOT; break;
             default:
                 fatal_fmt("Невідомий символ '%c' (рядок %d)", c, lx.line);
         }
@@ -316,7 +317,7 @@ enum {
     N_NUM, N_STR, N_VAR, N_BOOL, N_NIL, N_ARRAY, N_INDEX, N_IDXASSIGN,
     N_BINOP, N_UNARY, N_ASSIGN, N_LET, N_IF, N_WHILE, N_FN, N_CALL,
     N_RETURN, N_BLOCK, N_FOR, N_BREAK, N_CONTINUE,
-    N_IMPORT, N_FOREACH, N_TERNARY, N_TRY
+    N_IMPORT, N_FOREACH, N_TERNARY, N_TRY, N_MEMBER
 };
 
 typedef struct Node Node;
@@ -329,6 +330,7 @@ struct Node {
     int line;
     double num;
     char *str;
+    char *str2;
     Node *a, *b, *c;           /* операнди / умова / гілки */
     Node **items;              /* тіло блоку, аргументи, елементи масиву, параметри */
     int n;
@@ -409,6 +411,10 @@ static Node *pr_import(Parser *p) {
     Token path = pr_expect(p, T_STR);
     Node *n = new_node(p->a, N_IMPORT, line);
     n->str = path.text;
+    if (pr_peek(p).type == T_AS) {
+        pr_adv(p);
+        n->str2 = pr_expect(p, T_IDENT).text;
+    }
     return n;
 }
 
@@ -684,10 +690,11 @@ static Node *pr_unary(Parser *p) {
 static Node *pr_call(Parser *p) {
     Node *e = pr_primary(p);
     while (1) {
-        if (pr_peek(p).type == T_LPAREN && e->kind == N_VAR) {
+        if (pr_peek(p).type == T_LPAREN && (e->kind == N_VAR || e->kind == N_MEMBER)) {
             pr_adv(p);
             Node *n = new_node(p->a, N_CALL, e->line);
-            n->str = e->str;
+            if (e->kind == N_VAR) n->str = e->str;
+            else n->a = e;
             if (pr_peek(p).type != T_RPAREN) {
                 n_add(p->a, n, pr_expr(p));
                 while (pr_peek(p).type == T_COMMA) {
@@ -703,6 +710,13 @@ static Node *pr_call(Parser *p) {
             n->a = e;
             n->b = pr_expr(p);
             pr_expect(p, T_RBRACKET);
+            e = n;
+        } else if (pr_peek(p).type == T_DOT) {
+            pr_adv(p);
+            Token member = pr_expect(p, T_IDENT);
+            Node *n = new_node(p->a, N_MEMBER, e->line);
+            n->a = e;
+            n->str = member.text;
             e = n;
         } else if (pr_peek(p).type == T_PLUSPLUS || pr_peek(p).type == T_MINUSMINUS) {
             int op = pr_peek(p).type;                       /* i++ / i-- */
@@ -812,7 +826,7 @@ static Node *parse(Arena *a, Token *toks, int n) {
 }
 
 /* ═══════════ Значення ═══════════ */
-enum { V_NUM, V_BOOL, V_NIL, V_STR, V_ARR, V_FUNC, V_NATIVE };
+enum { V_NUM, V_BOOL, V_NIL, V_STR, V_ARR, V_FUNC, V_NATIVE, V_MODULE };
 
 typedef Value (*NativeFn)(Interp *I, Value *args, int n);
 
@@ -827,6 +841,7 @@ struct Value {
     Env *closure;          /* V_FUNC */
     char *fnname;          /* V_FUNC / V_NATIVE ім'я */
     NativeFn native;       /* V_NATIVE */
+    Env *module;           /* V_MODULE */
 };
 
 struct Env {
@@ -946,6 +961,7 @@ static char *fmt_into(Arena *a, Value v, int depth) {
             buf[o] = '\0';
             return buf;
         }
+        case V_MODULE: return a_strdup(a, "<module>");
         default: {
             char buf[128];
             snprintf(buf, sizeof buf, "<fn %s>", v.fnname ? v.fnname : "?");
@@ -1089,6 +1105,12 @@ static Value eval(Interp *I, Node *n) {
         case N_INDEX: {
             Value obj = eval(I, n->a);
             Value iv = eval(I, n->b);
+            if (obj.type == V_MODULE && iv.type == V_STR) {
+                Value member;
+                if (!env_get(obj.module, iv.str, &member))
+                    err_raise(I, "Модуль не містить такого символу");
+                return member;
+            }
             if (iv.type != V_NUM) err_raise(I, "Індекс має бути числом");
             long long i = (long long)iv.num;
             if (obj.type == V_ARR) {
@@ -1115,6 +1137,18 @@ static Value eval(Interp *I, Node *n) {
             }
             err_raise(I, "Індексація лише для масивів і рядків");
         }
+        case N_MEMBER: {
+            Value obj = eval(I, n->a);
+            if (obj.type != V_MODULE)
+                err_raise(I, "Доступ через крапку можливий лише для модуля");
+            Value member;
+            if (!env_get(obj.module, n->str, &member)) {
+                char buf[256];
+                snprintf(buf, sizeof buf, "Модуль не містить '%s' (рядок %d)", n->str, n->line);
+                err_raise(I, buf);
+            }
+            return member;
+        }
         case N_UNARY: {
             if (!strcmp(n->str, "-")) return mk_num(-eval(I, n->a).num);
             if (!strcmp(n->str, "not")) return mk_bool(!truthy(eval(I, n->a)));
@@ -1130,7 +1164,9 @@ static Value eval(Interp *I, Node *n) {
             int argc = n->n;
             for (int i = 0; i < argc; i++) args[i] = eval(I, n->items[i]);
             Value f;
-            if (!env_get(I->env, n->str, &f)) {
+            if (n->a) {
+                f = eval(I, n->a);
+            } else if (!env_get(I->env, n->str, &f)) {
                 char buf[256];
                 snprintf(buf, sizeof buf, "Невідома функція '%s' (рядок %d)", n->str, n->line);
                 err_raise(I, buf);
@@ -1322,10 +1358,23 @@ static void exec(Interp *I, Node *n) {
             int tok_n = 0;
             Token *toks = lex(I->a, src, &tok_n);
             Parser p; p.a = I->a; p.toks = toks; p.n = tok_n; p.i = 0;
+            Env *old_env = I->env;
+            Env *module_env = NULL;
+            if (n->str2) {
+                module_env = env_new(I->a, old_env);
+                I->env = module_env;
+            }
             while (pr_peek(&p).type != T_EOF) {
                 Node *stmt = pr_stmt(&p);
                 if (stmt) exec(I, stmt);
                 if (pr_peek(&p).type == T_NEWLINE || pr_peek(&p).type == T_SEMICOLON) pr_adv(&p);
+            }
+            if (module_env) {
+                I->env = old_env;
+                Value mod; memset(&mod, 0, sizeof mod);
+                mod.type = V_MODULE;
+                mod.module = module_env;
+                env_set(I->env, n->str2, mod);
             }
             return;
         }
@@ -1387,6 +1436,7 @@ static Value b_type(Interp *I, Value *args, int n) {
                     args[0].type == V_STR ? "рядок" :
                     args[0].type == V_BOOL ? "логічне" :
                     args[0].type == V_ARR ? "масив" :
+                    args[0].type == V_MODULE ? "модуль" :
                     args[0].type == V_FUNC || args[0].type == V_NATIVE ? "функція" : "nil";
     return mk_str(a_strdup(I->a, t));
 }
@@ -2297,7 +2347,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.19 — мова програмування\n"
+"  Сокіл (Sokil) v2.20 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2621,7 +2671,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.19\n");
+            printf("Sokil v2.20\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
