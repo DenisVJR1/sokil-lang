@@ -21,7 +21,10 @@ jobs:
           ref: ${{ inputs.tag }}
 
       - name: Set up MinGW
-        uses: egor-tensin/setup-mingw@v2
+        shell: pwsh
+        run: |
+          choco install mingw -y --no-progress
+          "C:\ProgramData\mingw64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build Sokil
         shell: bash
