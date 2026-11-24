@@ -85,7 +85,7 @@ jobs:
           $brush.Dispose()
           $bitmap.Dispose()
 
-          $makeAppx = Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\bin\*\x64\makeappx.exe" |
+          $makeAppx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
             Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $makeAppx) { throw 'Windows SDK makeappx.exe was not found' }
           & $makeAppx.FullName pack /d $packageRoot /p "$env:GITHUB_WORKSPACE\Sokil-Lang.msix" /o
