@@ -31,7 +31,8 @@
     <Application
       Id="Sokil"
       Executable="sokil.exe"
-      EntryPoint="Windows.FullTrustApplication">
+      EntryPoint="Windows.FullTrustApplication"
+      desktop4:SupportsMultipleInstances="true">
       <uap:VisualElements
         AppListEntry="none"
         DisplayName="Sokil"
