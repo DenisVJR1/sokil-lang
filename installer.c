@@ -45,7 +45,7 @@ static HBRUSH hbrCard, hbrSurface;
 static wchar_t statusTxt[512];
 static int g_page = 0;
 static int g_anim = 0;
-static wchar_t CUR_VER[] = L"2.18";
+static wchar_t CUR_VER[] = L"2.19";
 
 #define MAX_VER 16
 static wchar_t ver_urls[MAX_VER][768];
@@ -161,15 +161,14 @@ static BOOL path_update_root(HKEY root, BOOL add) {
     return ok;
 }
 static BOOL path_add(void) {
-    /* Prefer the current user's PATH; elevated installers can fall back to the machine PATH. */
-    BOOL ok = path_update_root(HKEY_CURRENT_USER, TRUE);
-    if (!ok) ok = path_update_root(HKEY_LOCAL_MACHINE, TRUE);
+    /* The installer is elevated, so the system PATH is the source of truth. */
+    BOOL ok = path_update_root(HKEY_LOCAL_MACHINE, TRUE);
     if (ok) notify_env();
     return ok;
 }
 static void path_remove(void) {
-    path_update_root(HKEY_CURRENT_USER, FALSE);
     path_update_root(HKEY_LOCAL_MACHINE, FALSE);
+    path_update_root(HKEY_CURRENT_USER, FALSE);
     notify_env();
 }
 static void notify_env(void) {
@@ -614,8 +613,8 @@ static int gui_main(HINSTANCE hInst) {
 }
 
 static void app_dir(void) {
-    DWORD sz = GetEnvironmentVariableW(L"LOCALAPPDATA", APP_DIR, MAX_PATH);
-    if (sz == 0 || sz >= MAX_PATH) wcscpy(APP_DIR, L"C:\\Users\\Public");
+    if (SHGetFolderPathW(NULL, CSIDL_PROGRAM_FILES, NULL, SHGFP_TYPE_CURRENT, APP_DIR) != S_OK)
+        wcscpy(APP_DIR, L"C:\\Program Files");
     size_t l = wcslen(APP_DIR);
     if (l && APP_DIR[l - 1] != L'\\') wcscat(APP_DIR, L"\\");
     wcscat(APP_DIR, L"Sokil");
@@ -629,7 +628,7 @@ int wmain(void) {
         int code;
         if (!wcscmp(argv[1], L"--install"))      code = do_install(1, 0) ? 0 : 1;
         else if (!wcscmp(argv[1], L"--uninstall")) code = do_uninstall() ? 0 : 1;
-        else if (!wcscmp(argv[1], L"--version")) { printf("Sokil Setup v%s\n", "2.18"); return 0; }
+        else if (!wcscmp(argv[1], L"--version")) { printf("Sokil Setup v%s\n", "2.19"); return 0; }
         else if (!wcscmp(argv[1], L"--path"))    { printf("%S\n", APP_DIR); return 0; }
         else return 1;
         LocalFree(argv);

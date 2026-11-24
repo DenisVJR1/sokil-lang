@@ -2297,7 +2297,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.18 — мова програмування\n"
+"  Сокіл (Sokil) v2.19 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2538,19 +2538,27 @@ static int cmd_compile(const char *srcpath) {
     return 0;
 }
 
-/* Самовідновлення PATH: якщо інстальована копія (з %LOCALAPPDATA%\Sokil),
-   а запис у HKCU\Environment Path зник — дописуємо і сповіщаємо систему. */
+/* Самовідновлення PATH для стандартних системної та користувацької інсталяцій. */
 static void path_guard(void) {
 #ifdef _WIN32
-    char dir[MAX_PATH], target[MAX_PATH];
+    char dir[MAX_PATH], target[MAX_PATH], expected[MAX_PATH];
     GetModuleFileNameA(NULL, dir, MAX_PATH);
     char *sl = strrchr(dir, '\\');
     if (!sl) return;
     *sl = '\0';
+    const char *pf = getenv("ProgramFiles");
     const char *la = getenv("LOCALAPPDATA");
-    if (!la) return;
-    snprintf(target, sizeof target, "%s\\Sokil", la);
-    if (_stricmp(dir, target) != 0) return;      /* портативна копія — не чіпаємо */
+    int installed = 0;
+    if (pf) {
+        snprintf(expected, sizeof expected, "%s\\Sokil", pf);
+        installed = _stricmp(dir, expected) == 0;
+    }
+    if (!installed && la) {
+        snprintf(expected, sizeof expected, "%s\\Sokil", la);
+        installed = _stricmp(dir, expected) == 0;
+    }
+    if (!installed) return;                       /* портативна копія — не чіпаємо */
+    snprintf(target, sizeof target, "%s", dir);
 
     HKEY hk;
     if (RegOpenKeyExA(HKEY_CURRENT_USER, "Environment", 0,
@@ -2613,7 +2621,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.18\n");
+            printf("Sokil v2.19\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */

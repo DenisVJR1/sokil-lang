@@ -29,8 +29,8 @@ Sokil-Setup.exe --install  # тиха установка
 Sokil-Setup.exe --uninstall
 ```
 
-- Встановлює **обидва** файли у `%LOCALAPPDATA%\Sokil`: мову + IDE автоматично
-- Запитує права адміністратора та перевіряє запис у PATH; якщо PATH користувача недоступний, використовує системний PATH
+- Встановлює **обидва** файли у `C:\Program Files\Sokil`: мову + IDE автоматично
+- Запитує права адміністратора та перевіряє запис у системному PATH
 - Галочка **«Патчити PATH»** — запуск мови з будь-якого нового терміналу
 - **«Версія»** — вбудована (офлайн), latest або конкретний тег з GitHub
 - Ставить асоціацію `.sokil` — подвійний клік по файлу запускає програму через `cmd /k`
@@ -124,8 +124,8 @@ Sokil-Setup.exe --install  # silent install
 Sokil-Setup.exe --uninstall
 ```
 
-- Installs **both** files to `%LOCALAPPDATA%\Sokil`: the language + the IDE automatically
-- Requests administrator rights and verifies the PATH entry, falling back to the system PATH when needed
+- Installs **both** files to `C:\Program Files\Sokil`: the language + the IDE automatically
+- Requests administrator rights and verifies the system PATH entry
 - **"Patch PATH"** checkbox — run the language from any new terminal
 - **"Version"** dropdown — embedded (offline), latest, or a specific GitHub tag
 - Sets the `.sokil` association — double-clicking a file runs the program via `cmd /k`

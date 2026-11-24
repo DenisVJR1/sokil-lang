@@ -5,10 +5,10 @@
 
 [Setup]
 AppName=Сокіл (Sokil)
-AppVersion=2.18
+AppVersion=2.19
 AppPublisher=Sokil
 PrivilegesRequired=admin
-DefaultDirName={localappdata}\Sokil
+DefaultDirName={autopf}\Sokil
 DefaultGroupName=Сокіл
 DisableProgramGroupPage=yes
 OutputBaseFilename=Sokil-Setup
@@ -20,7 +20,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 Source: "sokil.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; \
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; \
     ValueData: "{olddata};{app}"; Check: NeedsAddPath('{app}')
 
 [UninstallDelete]
@@ -31,7 +31,7 @@ function NeedsAddPath(Param: String): Boolean;
 var
   OrigPath: String;
 begin
-  if not RegQueryStringValue(HKCU, 'Environment', 'Path', OrigPath) then
+  if not RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 'Path', OrigPath) then
   begin
     Result := True;
     Exit;
