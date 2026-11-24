@@ -42,7 +42,7 @@ sudo ./install.sh          # збирає і ставить у /usr/local/bin
 
 ### Microsoft Store
 
-Для Windows CI також збирається `Sokil-Lang.msix` із CLI та Sokil IDE. Пакет використовує
+Для Windows CI також збирається `Sokil-Lang.msix` із Sokil IDE та вбудованим CLI. Пакет використовує
 identity з Partner Center (`VJRStudio.SokilLang`) і призначений для завантаження в Microsoft
 Partner Center; Store підписує пакет під час публікації.
 
