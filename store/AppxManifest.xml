@@ -31,7 +31,10 @@
         BackgroundColor="#18181B"
         Square150x150Logo="Assets\logo.png"
         Square44x44Logo="Assets\logo.png" />
-      <uap5:Extension Category="windows.appExecutionAlias">
+      <uap5:Extension
+        Category="windows.appExecutionAlias"
+        Executable="sokil.exe"
+        EntryPoint="Windows.FullTrustApplication">
         <uap5:AppExecutionAlias desktop:Subsystem="console">
           <desktop:ExecutionAlias Alias="sokil.exe" />
         </uap5:AppExecutionAlias>
