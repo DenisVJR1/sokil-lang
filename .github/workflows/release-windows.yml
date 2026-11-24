@@ -44,8 +44,8 @@ jobs:
           $writer.WriteLine("};")
           $writer.WriteLine("static const unsigned int sokil_exe_len = $($bytes.Length);")
           $writer.Close()
-          windres installer.rc installer.res
-          gcc -O2 -municode -mwindows -o Sokil-Setup.exe installer.c installer.res -ldwmapi -lshell32 -lurlmon -lole32 -lcomctl32 -lgdi32 -luser32 -ladvapi32
+          windres installer.rc installer.o
+          gcc -O2 -municode -mwindows -o Sokil-Setup.exe installer.c installer.o -ldwmapi -lshell32 -lurlmon -lole32 -lcomctl32 -lgdi32 -luser32 -ladvapi32
 
       - name: Upload executable
         uses: softprops/action-gh-release@v2
