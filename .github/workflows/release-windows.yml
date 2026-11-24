@@ -7,6 +7,10 @@ on:
         description: Release tag to upload
         required: true
         default: v2.21
+      source_ref:
+        description: Git ref containing the source to build
+        required: true
+        default: master
 
 permissions:
   contents: write
@@ -18,7 +22,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ inputs.source_ref }}
 
       - name: Set up MinGW
         shell: pwsh
@@ -60,8 +64,10 @@ jobs:
 
       - name: Build MSIX package
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $version = $env:RELEASE_TAG -replace '^v', ''
           if ($version -notmatch '^\d+\.\d+\.\d+$') { $version = '2.21.0' }
           $msixVersion = "$version.0"
           $packageRoot = Join-Path $env:RUNNER_TEMP 'sokil-msix'
