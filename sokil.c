@@ -1633,6 +1633,42 @@ static Value b_reduce(Interp *I, Value *a, int n) {
     }
     return acc;
 }
+static Value b_all(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_ARR || (a[1].type != V_FUNC && a[1].type != V_NATIVE))
+        err_raise(I, "all(arr, fn) → логічне");
+    for (int i = 0; i < a[0].len; i++) {
+        Value args[1] = { a[0].items[i] };
+        Value r = (a[1].type == V_NATIVE) ? a[1].native(I, args, 1)
+                                          : call_func(I, a[1].fn, a[1].closure, args, 1);
+        if (!truthy(r)) return mk_bool(0);
+    }
+    return mk_bool(1);
+}
+static Value b_any(Interp *I, Value *a, int n) {
+    if (n != 2 || a[0].type != V_ARR || (a[1].type != V_FUNC && a[1].type != V_NATIVE))
+        err_raise(I, "any(arr, fn) → логічне");
+    for (int i = 0; i < a[0].len; i++) {
+        Value args[1] = { a[0].items[i] };
+        Value r = (a[1].type == V_NATIVE) ? a[1].native(I, args, 1)
+                                          : call_func(I, a[1].fn, a[1].closure, args, 1);
+        if (truthy(r)) return mk_bool(1);
+    }
+    return mk_bool(0);
+}
+static Value b_unique(Interp *I, Value *a, int n) {
+    if (n != 1 || a[0].type != V_ARR) err_raise(I, "unique(arr) → масив");
+    Value src = a[0];
+    Value *items = (Value *)a_alloc(I->a, (size_t)(src.len ? src.len : 1) * sizeof(Value));
+    int count = 0;
+    for (int i = 0; i < src.len; i++) {
+        int seen = 0;
+        for (int j = 0; j < count; j++)
+            if (value_eq(items[j], src.items[i])) { seen = 1; break; }
+        if (!seen) items[count++] = src.items[i];
+    }
+    Value out; out.type = V_ARR; out.len = count; out.items = items;
+    return out;
+}
 static Value b_reverse(Interp *I, Value *a, int n) {
     if (n != 1 || a[0].type != V_ARR) err_raise(I, "reverse(arr) → масив");
     Value src = a[0]; Value dst; dst.type = V_ARR; dst.len = src.len; dst.items = (Value *)a_alloc(I->a, (size_t)dst.len * sizeof(Value));
@@ -2178,6 +2214,9 @@ static void install_builtins(Interp *I) {
     Value am; am.type = V_NATIVE; am.native = b_map; am.fnname = "map"; env_set(g, "map", am);
     Value af; af.type = V_NATIVE; af.native = b_filter; af.fnname = "filter"; env_set(g, "filter", af);
     Value ar; ar.type = V_NATIVE; ar.native = b_reduce; ar.fnname = "reduce"; env_set(g, "reduce", ar);
+    Value aa; aa.type = V_NATIVE; aa.native = b_all; aa.fnname = "all"; env_set(g, "all", aa);
+    Value ay; ay.type = V_NATIVE; ay.native = b_any; ay.fnname = "any"; env_set(g, "any", ay);
+    Value au; au.type = V_NATIVE; au.native = b_unique; au.fnname = "unique"; env_set(g, "unique", au);
     Value av2; av2.type = V_NATIVE; av2.native = b_reverse; av2.fnname = "reverse"; env_set(g, "reverse", av2);
     Value as; as.type = V_NATIVE; as.native = b_shuffle; as.fnname = "shuffle"; env_set(g, "shuffle", as);
     Value asum; asum.type = V_NATIVE; asum.native = b_sum; asum.fnname = "sum"; env_set(g, "sum", asum);
@@ -2258,7 +2297,7 @@ static void install_builtins(Interp *I) {
 /* ═══════════ Запуск ═══════════ */
 static const char *BANNER =
 "=================================\n"
-"  Сокіл (Sokil) v2.15 — мова програмування\n"
+"  Сокіл (Sokil) v2.17 — мова програмування\n"
 "  sokil файл.sokil · sokil -e \"код\" · sokil --compile файл.sokil\n"
 "  REPL: введи код, exit — вийти\n"
 "=================================\n";
@@ -2574,7 +2613,7 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         if (!strcmp(argv[1], "--update")) return cmd_update();
         if (!strcmp(argv[1], "--version")) {
-            printf("Sokil v2.15\n");
+            printf("Sokil v2.17\n");
             return 0;
         }
         if (!strcmp(argv[1], "-e")) {             /* sokil -e "код" */
