@@ -4,7 +4,8 @@
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  IgnorableNamespaces="uap uap5 desktop">
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  IgnorableNamespaces="uap uap5 desktop desktop4">
   <Identity
     Name="VJRStudio.SokilLang"
     Publisher="CN=B69EE5FE-9D6C-44AB-8A77-45EBB7290450"
@@ -36,8 +37,8 @@
           Category="windows.appExecutionAlias"
           Executable="sokil.exe"
           EntryPoint="Windows.FullTrustApplication">
-          <uap5:AppExecutionAlias desktop:Subsystem="console">
-            <desktop:ExecutionAlias Alias="sokil.exe" />
+          <uap5:AppExecutionAlias desktop4:Subsystem="console">
+            <uap5:ExecutionAlias Alias="sokil.exe" />
           </uap5:AppExecutionAlias>
         </uap5:Extension>
       </Extensions>
