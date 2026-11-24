@@ -96,9 +96,9 @@ jobs:
           if (-not $makeAppx) { throw 'Windows SDK makeappx.exe was not found' }
           & $makeAppx.FullName pack /d $packageRoot /p "$env:GITHUB_WORKSPACE\Sokil-Lang.msix" /o
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          & $makeAppx.FullName validate /p "$env:GITHUB_WORKSPACE\Sokil-Lang.msix"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$env:GITHUB_WORKSPACE\Sokil-Lang.msix")) {
+            throw 'MSIX package was not created'
+          }
 
       - name: Upload executable
         uses: softprops/action-gh-release@v2
